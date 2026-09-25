@@ -84,34 +84,32 @@ export class VehicleController {
     const up = new THREE.Vector3(0, 1, 0)
     const normal = new THREE.Vector3().crossVectors(tangent, up).normalize().multiplyScalar(-1)
     const pos = center.clone().addScaledVector(normal, this.lateral)
-    // smooth Y alignment: lerp vehicle Y to road Y
-    const targetY = pos.y // roadCenterY
-    // vehicle vertical smoothing (spring)
+    // FIX saltos: lerp hacia targetY+hover (no hacia targetY solo)
+    const HOVER = 0.42 // altura sobre asfalto (antes 0.72 causaba divergencia)
+    const targetYHover = pos.y + HOVER
     const curY = this.vehicle.position.y
-    const newY = THREE.MathUtils.lerp(curY, targetY, 1 - Math.exp(-8 * dt))
+    // spring suave sin overshoot (8 -> 6 para menos nervioso)
+    const vyAlpha = 1 - Math.exp(-6 * dt)
+    const newY = THREE.MathUtils.lerp(curY, targetYHover, vyAlpha)
     pos.y = newY
-    // slight hover
-    pos.y += 0.72
 
     this.vehicle.position.copy(pos)
 
-    // orientation: align to road tangent, with roll from steering
-    const targetYaw = Math.atan2(tangent.x, tangent.z) // yaw around Y
-    const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1)) // pitch along slope
-    const targetRoll = -this.steerValue * speedFactor * 0.42 - (this.lateral * 0.04) // roll into curve
+    // orientación: alineación con tangente, pitch/roll suavizados (sin bob)
+    const targetYaw = Math.atan2(tangent.x, tangent.z) // yaw Y
+    const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1))
+    const targetRoll = -this.steerValue * speedFactor * 0.32 - (this.lateral * 0.025)
 
     this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, 1 - Math.exp(-this.yawLerp * dt))
     this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, 1 - Math.exp(-this.pitchLerp * dt))
     this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, 1 - Math.exp(-this.rollLerp * dt))
 
-    // apply smoothly via quaternion slerp could be more accurate, but euler lerp is fine for racing
-    // Use order YXZ
     this.vehicle.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ')
 
-    // wheel/body tilt visual: could also tilt chassis slightly with lateral
-    // suspension bob with speed (subtle)
-    const bob = Math.sin(this.progress * 0.18) * 0.02 * (Math.abs(this.speed) / this.maxSpeed)
-    this.vehicle.position.y += bob
+    // bob de suspensión desactivado para 60 FPS estable (antes 0.02 causaba saltos perceptibles)
+    // si se quiere, usar amortiguado muy leve:
+    // const bob = Math.sin(this.progress * 0.12) * 0.007 * (Math.abs(this.speed)/this.maxSpeed)
+    // this.vehicle.position.y += bob
   }
 
   // helpers

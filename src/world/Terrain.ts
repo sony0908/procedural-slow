@@ -68,6 +68,14 @@ export function buildTerrainChunk(z0: number, z1: number): THREE.BufferGeometry 
     pos.setXYZ(i, x, h, z)
   }
   delete (pos as any)._heights
+  // FIX mapa de cabeza: PlaneGeometry Y->Z swap invierte winding (normales hacia abajo)
+  // Invertimos winding para que la cara frontal apunte +Y (cielo)
+  const idx = geom.getIndex()!
+  const arr = idx.array as any
+  for (let i = 0; i < arr.length; i += 3) {
+    const b = arr[i + 1]; arr[i + 1] = arr[i + 2]; arr[i + 2] = b
+  }
+  idx.needsUpdate = true
   geom.computeVertexNormals()
   // add vertex colors for gradient (dark valley to magenta tint peak)
   const colors: number[] = []
@@ -89,8 +97,7 @@ export function buildTerrainChunk(z0: number, z1: number): THREE.BufferGeometry 
 }
 
 export function createTerrainMaterial(): THREE.Material {
-  // Spec: wireframe or flatShading with dark gradient and fluorescent edges
-  // Use MeshStandardMaterial with wireframe true + vertexColors
+  // Spec: wireframe or flatShading con bordes fluorescentes
   return new THREE.MeshStandardMaterial({
     vertexColors: true,
     wireframe: true,
@@ -100,7 +107,8 @@ export function createTerrainMaterial(): THREE.Material {
     emissiveIntensity: 0.25,
     flatShading: true,
     transparent: true,
-    opacity: 0.98
+    opacity: 0.98,
+    side: THREE.DoubleSide
   })
 }
 

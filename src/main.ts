@@ -128,7 +128,8 @@ const chunkMgr = new CyberChunkManager(scene)
 
 // ——— Vehicle ———
 const vehicleGroup = new THREE.Group()
-vehicleGroup.position.set(0, 1, 6)
+// posición inicial sobre la pista (HOVER 0.42 corrige saltos)
+vehicleGroup.position.copy(roadCenter(6)); vehicleGroup.position.y += 0.42
 // initial orientation facing +Z
 scene.add(vehicleGroup)
 
@@ -200,11 +201,19 @@ async function loadVehicle() {
         o.receiveShadow = false
       }
     })
-    // normalize scale & position to fit racing view
+    // CORRECCIÓN auto de cabeza: normalizar escala + alinear longitud a +Z y nivelar
     const box = new THREE.Box3().setFromObject(root)
     const size = box.getSize(new THREE.Vector3())
-    const maxDim = Math.max(size.x, size.y, size.z)
-    // DS Survolt is ~4.1m long ≈ 4.1 units; normalize to ~3.9 length in our world scale
+    // Detectar orientación: la Survolt mide ~4m largo, si size.x >> size.z está tumbada 90°
+    const needYaw90 = size.x > size.z * 1.35
+    if (needYaw90) {
+      root.rotation.set(0, Math.PI * 0.5, 0)
+      root.updateMatrixWorld(true)
+      // recalcular caja tras giro
+      const boxR = new THREE.Box3().setFromObject(root)
+      const szR = boxR.getSize(new THREE.Vector3())
+      size.copy(szR)
+    }
     const targetLen = 4.0
     const longest = Math.max(size.x, size.z)
     const s = longest > 0 ? targetLen / longest : 1
@@ -213,13 +222,18 @@ async function loadVehicle() {
     const box2 = new THREE.Box3().setFromObject(root)
     const center = box2.getCenter(new THREE.Vector3())
     root.position.sub(center)
-    root.position.y += 0.62 // lift to ground
-    root.position.z += 0.08
-    // Survolt GLB faces -Z or +Z? Test: assume +Z forward, adjust
-    // We will try to orient: rotate 180 if needed
-    // Check by seeing if bounding center is offset, but keep generic: rotate to face +Z (road direction)
-    // The model originally faces +Z? We'll set rotation Y = 0 and fine-tune
-    root.rotation.set(0, Math.PI, 0)
+    // Altura de ruedas al asfalto — antes 0.62 causaba flotación + saltos
+    root.position.y += 0.42
+    root.position.z += 0.06
+    // Frente hacia +Z (dirección carretera). El GLB original mira -Z en Three, así que Math.PI
+    // Si sigue de cabeza, prueba 0 o Math.PI: dejamos Math.PI pero con corrección de vuelco:
+    // La Survolt tiene el techo en +Y; si sale invertida es que el GLB trae X = -PI, lo corregimos
+    root.rotation.y = Math.PI
+    // Si detectamos que la caja está invertida en Y (centro muy bajo), volteamos X
+    // Heurística: tamaño Y debería ser ~1.2, si está invertido el centro Y negativo grande, ya lo centramos arriba
+    // Asegurar que no haya vuelco 180 en X/Z
+    root.rotation.x = 0
+    root.rotation.z = 0
 
     // remove placeholder
     if (vehicleMesh) {
@@ -326,6 +340,24 @@ addEventListener('keydown', (e) => {
     paused = !paused
     if (paused) { overlay.classList.remove('hidden'); showNotice('PAUSA — ESC para continuar') }
     else overlay.classList.add('hidden')
+  }
+  // DEBUG vuelco: O = flip X 180°, U = flip Y, J = +0.1 altura
+  if (e.code === 'KeyO' && vehicleMesh) {
+    vehicleMesh.rotation.x += Math.PI
+    showNotice(`Vuelco X: ${((vehicleMesh.rotation.x*180/Math.PI)%360).toFixed(0)}°`, 1200)
+    console.log('vehicleMesh.rotation', vehicleMesh.rotation)
+  }
+  if (e.code === 'KeyU' && vehicleMesh) {
+    vehicleMesh.rotation.y += Math.PI * 0.5
+    showNotice(`Guiñada Y: ${((vehicleMesh.rotation.y*180/Math.PI)%360).toFixed(0)}°`, 1200)
+  }
+  if (e.code === 'KeyJ' && vehicleMesh) {
+    vehicleMesh.position.y += 0.12
+    showNotice(`Ajuste altura local: ${vehicleMesh.position.y.toFixed(2)}`, 1200)
+  }
+  if (e.code === 'KeyK' && vehicleMesh) {
+    vehicleMesh.position.y -= 0.12
+    showNotice(`Ajuste altura local: ${vehicleMesh.position.y.toFixed(2)}`, 1200)
   }
 })
 

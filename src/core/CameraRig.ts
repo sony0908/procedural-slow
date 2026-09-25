@@ -50,12 +50,17 @@ export class CameraRig {
     this.lookAt.lerp(aheadPos, 1 - Math.exp(-6 * dt))
     this.camera.lookAt(this.lookAt)
 
-    // camera roll on curves (tilt Z) – we rotate camera after lookAt via manual roll
-    const targetRoll = -steerValue * 0.22 - (t.x * 0.08) // steer + curvature
+    // FIX cámara de cabeza / roll que voltea: aplicar roll vía quaternion sobre eje forward, no Euler Z
+    const targetRoll = -steerValue * 0.18 - (t.x * 0.06)
     this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, 1 - Math.exp(-2.8 * dt))
-    // apply roll by rotating camera around its forward axis
-    // Three's camera up adjustment: we can rotate on Z after lookAt
-    this.camera.rotation.z = this.roll
+    // forward tras lookAt
+    const forward = new THREE.Vector3().subVectors(this.lookAt, this.camera.position).normalize()
+    const qBase = this.camera.quaternion.clone()
+    const qRoll = new THREE.Quaternion().setFromAxisAngle(forward, this.roll)
+    // qFinal = qRoll * qBase  (roll alrededor de forward)
+    this.camera.quaternion.copy(qBase).premultiply(qRoll)
+    // mantener up razonable para evitar flip
+    this.camera.up.set(0, 1, 0)
 
     // FOV boost with speed
     const speed01 = THREE.MathUtils.clamp(Math.abs(speed) / 72, 0, 1)
