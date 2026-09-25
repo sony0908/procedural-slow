@@ -237,7 +237,29 @@ async function loadVehicle() {
 
     // --- ruedas delanteras giran — crear pivots por rueda (FL,FR,BL,BR) con rims+tire juntos ---
     try {
-      const collect = (key: string) => {
+      // corrección ruedas: las mallas GLB tienen geometría descentrada (vértices en world), nodo en 0,0,0 → orbitaban alrededor del coche
+      // recentramos geometría y ponemos mesh en el centro real de la rueda para que gire sobre su eje
+      const fixWheelGeometry = (groups: THREE.Object3D[]) => {
+        const meshes: THREE.Object3D[] = []
+        groups.forEach(g=>{
+          g.traverse((o:any)=>{
+            if(o.isMesh){
+              const m = o as THREE.Mesh
+              m.geometry.computeBoundingBox()
+              const center = m.geometry.boundingBox!.getCenter(new THREE.Vector3())
+              // trasladar geometría al origen
+              m.geometry.translate(-center.x, -center.y, -center.z)
+              // poner mesh en el centro world donde estaba la geometría (compensar parent)
+              // centro en local de g: como g está en 0,0,0, el centro world es center local + g parent world
+              // simplificar: mesh posición = center (local de g)
+              m.position.copy(center)
+              meshes.push(m)
+            }
+          })
+        })
+        return meshes
+      }
+      const collectGroups = (key: string) => {
         const groups: THREE.Object3D[] = []
         root.traverse((o: any) => {
           const n = (o.name || '').toLowerCase()
@@ -247,36 +269,15 @@ async function loadVehicle() {
         })
         return groups
       }
-      const flGroups = collect('wheelfl')
-      const frGroups = collect('wheelfr')
-      const blGroups = collect('wheelbl')
-      const brGroups = collect('wheelbr')
-      const makePivot = (groups: THREE.Object3D[], label: string) => {
-        if (groups.length === 0) return null
-        const pivot = new THREE.Group(); pivot.name = `pivot_${label}`
-        const parent = groups[0].parent as THREE.Object3D
-        const avg = new THREE.Vector3()
-        groups.forEach(g=> avg.add(g.position))
-        avg.divideScalar(groups.length)
-        pivot.position.copy(avg)
-        groups.forEach(g=>{
-          const p = g.parent as THREE.Object3D
-          p.remove(g)
-          g.position.sub(avg)
-          pivot.add(g)
-        })
-        parent.add(pivot)
-        return pivot
-      }
-      const frontPivots: THREE.Object3D[] = []
-      const rearPivots: THREE.Object3D[] = []
-      const pFL = makePivot(flGroups, 'FL'); if(pFL) frontPivots.push(pFL)
-      const pFR = makePivot(frGroups, 'FR'); if(pFR) frontPivots.push(pFR)
-      const pBL = makePivot(blGroups, 'BL'); if(pBL) rearPivots.push(pBL)
-      const pBR = makePivot(brGroups, 'BR'); if(pBR) rearPivots.push(pBR)
-      // fallback si no se crearon pivots (buscar meshes)
-      let front = frontPivots
-      let rear = rearPivots
+      const flGroups = collectGroups('wheelfl')
+      const frGroups = collectGroups('wheelfr')
+      const blGroups = collectGroups('wheelbl')
+      const brGroups = collectGroups('wheelbr')
+      // crear meshes corregidos (cada rueda = rims+tire)
+      const frontMeshes = [...fixWheelGeometry(flGroups), ...fixWheelGeometry(frGroups)]
+      const rearMeshes = [...fixWheelGeometry(blGroups), ...fixWheelGeometry(brGroups)]
+      let front: THREE.Object3D[] = frontMeshes
+      let rear: THREE.Object3D[] = rearMeshes
       // fallback si no hay grupos (buscar meshes)
       if (front.length === 0) {
         const meshes: THREE.Object3D[] = []
