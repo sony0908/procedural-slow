@@ -124,28 +124,27 @@ export class VehicleController {
 
     this.vehicle.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ')
 
-    // ruedas delanteras giran al doblar + spin por velocidad
+    // ruedas: steer Y en pivot, spin X en meshes descendientes (soporta pivots con 2 grupos rims+tire)
     const maxSteerAngle = 0.52
     const steerAngle = this.steerValue * maxSteerAngle
-    this.wheelSpin += this.speed * dt * 5.4
-    // front: steer en Y del pivot, spin en X de todos los hijos meshes
+    this.wheelSpin += this.speed * dt * 5.6
     for (const w of this.frontWheels) {
-      const isPivot = w.children.length > 0 && (w.children[0] as any).isMesh
-      if (isPivot) {
-        w.rotation.y = steerAngle
-        w.children.forEach((c:any)=>{ if(c.isMesh) c.rotation.x = this.wheelSpin })
-      } else {
-        w.rotation.y = steerAngle
-        ;(w as any).rotation.x = this.wheelSpin
-      }
+      w.rotation.y = steerAngle
+      w.traverse((obj:any)=>{ if(obj.isMesh) obj.rotation.x = this.wheelSpin })
+      // evitar que traverse también ponga X al pivot mismo si es mesh (no)
     }
     for (const w of this.rearWheels) {
-      const isPivot = w.children.length > 0 && (w.children[0] as any).isMesh
-      if (isPivot) {
-        w.children.forEach((c:any)=>{ if(c.isMesh) c.rotation.x = this.wheelSpin })
-      } else {
-        ;(w as any).rotation.x = this.wheelSpin
-      }
+      // rear no steer, solo spin
+      w.traverse((obj:any)=>{ if(obj.isMesh) obj.rotation.x = this.wheelSpin })
+    }
+    // placeholder trasero que son meshes directos sin pivot: también necesitan spin, pero traverse ya cubre si son meshes
+    // para placeholder rear meshes directos (sin pivot), frontWheels ya cubierto, rearWheels traverse no llega a mesh directo? rearWheels son meshes directos, traverse incluye si mismo
+    // asegurar que meshes directos también giren (si w es mesh)
+    for (const w of this.rearWheels) {
+      if ((w as any).isMesh) (w as any).rotation.x = this.wheelSpin
+    }
+    for (const w of this.frontWheels) {
+      if ((w as any).isMesh) (w as any).rotation.x = this.wheelSpin
     }
   }
 

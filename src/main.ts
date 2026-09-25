@@ -235,25 +235,48 @@ async function loadVehicle() {
     ;(vehicleGroup as any)._hl = hl
     ;(vehicleGroup as any)._tl = tl
 
-    // --- ruedas delanteras giran — usar grupos wheelFL/FR (evita bug de meshes sueltas) ---
+    // --- ruedas delanteras giran — crear pivots por rueda (FL,FR,BL,BR) con rims+tire juntos ---
     try {
-      const frontGroups: THREE.Object3D[] = []
-      const rearGroups: THREE.Object3D[] = []
-      root.traverse((o: any) => {
-        const n = (o.name || '').toLowerCase()
-        const isGroup = !o.isMesh
-        if (!isGroup) return
-        if (n.includes('caliper')) return // pinza no gira
-        if (n.includes('wheelfl') || n.includes('wheelfr')) {
-          // solo tire y rims (no steering_wheel)
-          if (n.includes('tire') || n.includes('rim') || n.includes('wheel')) frontGroups.push(o)
-        } else if (n.includes('wheelbl') || n.includes('wheelbr')) {
-          if (n.includes('tire') || n.includes('rim') || n.includes('wheel')) rearGroups.push(o)
-        }
-      })
-      // usar todos los grupos rims+tire por rueda (4 delante, 4 detrás) para que rims y tire giren juntos
-      const front = frontGroups // 4: FL rims, FL tire, FR rims, FR tire
-      const rear = rearGroups // 4: BL rims/tire, BR rims/tire
+      const collect = (key: string) => {
+        const groups: THREE.Object3D[] = []
+        root.traverse((o: any) => {
+          const n = (o.name || '').toLowerCase()
+          if (!o.isMesh && !n.includes('caliper') && n.includes(key) && (n.includes('tire') || n.includes('rim'))) {
+            groups.push(o)
+          }
+        })
+        return groups
+      }
+      const flGroups = collect('wheelfl')
+      const frGroups = collect('wheelfr')
+      const blGroups = collect('wheelbl')
+      const brGroups = collect('wheelbr')
+      const makePivot = (groups: THREE.Object3D[], label: string) => {
+        if (groups.length === 0) return null
+        const pivot = new THREE.Group(); pivot.name = `pivot_${label}`
+        const parent = groups[0].parent as THREE.Object3D
+        const avg = new THREE.Vector3()
+        groups.forEach(g=> avg.add(g.position))
+        avg.divideScalar(groups.length)
+        pivot.position.copy(avg)
+        groups.forEach(g=>{
+          const p = g.parent as THREE.Object3D
+          p.remove(g)
+          g.position.sub(avg)
+          pivot.add(g)
+        })
+        parent.add(pivot)
+        return pivot
+      }
+      const frontPivots: THREE.Object3D[] = []
+      const rearPivots: THREE.Object3D[] = []
+      const pFL = makePivot(flGroups, 'FL'); if(pFL) frontPivots.push(pFL)
+      const pFR = makePivot(frGroups, 'FR'); if(pFR) frontPivots.push(pFR)
+      const pBL = makePivot(blGroups, 'BL'); if(pBL) rearPivots.push(pBL)
+      const pBR = makePivot(brGroups, 'BR'); if(pBR) rearPivots.push(pBR)
+      // fallback si no se crearon pivots (buscar meshes)
+      let front = frontPivots
+      let rear = rearPivots
       // fallback si no hay grupos (buscar meshes)
       if (front.length === 0) {
         const meshes: THREE.Object3D[] = []
