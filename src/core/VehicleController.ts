@@ -188,7 +188,20 @@ export class VehicleController {
     // sin auto-centrado (slowroads mantiene donde lo dejas)
     // solo fricción natural por drag lateral ya aplicada
 
-    this.lateral = THREE.MathUtils.clamp(this.lateral, -this.lateralLimit, this.lateralLimit)
+    const atRightWall = this.lateral >= this.lateralLimit - 0.02
+    const atLeftWall = this.lateral <= -this.lateralLimit + 0.02
+    const pushingRightWall = atRightWall && this.steerValue > 0.05
+    const pushingLeftWall = atLeftWall && this.steerValue < -0.05
+    const atWall = pushingRightWall || pushingLeftWall
+    if (atWall) {
+      // muro: no avanzar más, rebote suave hacia dentro y sin yaw extra
+      this.lateral = THREE.MathUtils.clamp(this.lateral, -this.lateralLimit, this.lateralLimit)
+      // pequeño empuje hacia dentro para no quedar pegado
+      this.lateral = THREE.MathUtils.lerp(this.lateral, this.lateral - Math.sign(this.steerValue) * 0.08, 0.12)
+      this.slip *= 0.92
+    } else {
+      this.lateral = THREE.MathUtils.clamp(this.lateral, -this.lateralLimit, this.lateralLimit)
+    }
 
     // progreso longitudinal
     this.progress += this.speed * dt
@@ -207,10 +220,10 @@ export class VehicleController {
     pos.y = THREE.MathUtils.lerp(curY, targetY, vyAlpha)
     this.vehicle.position.copy(pos)
 
-    // rotación: yaw = roadYaw + steer*0.62 (visual, slowroadsAckermann)
+    // rotación: yaw = roadYaw + steer*0.62, pero si está contra muro no gira pegado
     const roadYaw = Math.atan2(tangent.x, tangent.z)
-    // Ackermann real slowroads: steerL/R distintos, usamos promedio
-    const steerYaw = this.steerValue * 0.62
+    const steerYawRaw = this.steerValue * 0.62
+    const steerYaw = atWall ? steerYawRaw * 0.18 : steerYawRaw
     const targetYaw = roadYaw + steerYaw
     const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1)) * 0.55
     const targetRoll = 0
