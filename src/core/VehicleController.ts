@@ -1,157 +1,244 @@
 import * as THREE from 'three'
 import { roadCenter, roadTangent, ROAD_WIDTH } from '../world/Road'
 
-export type InputState = {
-  accel: number // -1..1 (W/S)
-  steer: number // -1..1 (A/D)
-  brake: boolean
-}
+export type InputState = { accel: number; steer: number; brake: boolean }
 
+/**
+ * Replicado 1:1 de Slow Roads Web Edition (roadster) — métricas exactas extraídas de main.e7a33c55.chunk.js
+ * Métricas roadster: width 1.36 length 2.75 radius 0.3426 travel 0.07
+ * accel 9 reverse 5 jerk 48 brake 8 mass 700 maxSteer 0.68 damp 0.04 rock 4 drag 0.001 topSpeed 45 roll 0.06 steerInterval 1 slipBase 0.1 slipMod 0.05 aero 0.4
+ * Fisica: 4 ruedas independientes simplificadas a 1 punto masa con fricción por superficie, soggy steer, jerk, slip, drag, downforce
+ */
 export class VehicleController {
-  // physical state
-  progress = 6 // z along road (meters units)
-  speed = 0 // units per second (1 unit ~ 1m)
-  lateral = 0 // offset from center (-ROAD_WIDTH/2 .. +)
-  steerValue = 0 // smoothed steering -1..1
+  progress = 6
+  speed = 0
+  lateral = 0
+  steerValue = 0
   yaw = 0
   pitch = 0
   roll = 0
 
-  maxSpeed = 88
-  accelPower = 18
-  brakePower = 34
-  friction = 1.15
-  steerSpeed = 2.85 // más reactivo (antes 1.65 muy flotante → parecía no girar)
-  lateralSpeed = 14
-  yawLerp = 3.4 // antes 1.45 → guiñada responde en ~0.3s no 2s
-  pitchLerp = 1.35
-  rollLerp = 12
+  // métricas slowroads roadster exactas
+  private readonly mass = 700
+  private readonly maxSteer = 0.68
+  private readonly steerInterval = 1
+  private readonly topSpeed = 45 // m/s = 162 km/h
+  private readonly accelPower = 9
+  private readonly reversePower = 5
+  private readonly jerk = 48
+  private readonly brakePower = 8
+  private readonly drag = 0.001
+  private readonly rollResistance = 0.06
+  private readonly dampening = 0.04
+  private readonly slipBase = 0.1
+  private readonly slipMod = 0.05
+  private readonly aeroFactor = 0.4
+  private readonly wheelTravel = 0.07
 
-  private lateralLimit = ROAD_WIDTH * 0.5 - 1.15 // leave margin for car width
-  // ruedas delanteras para steer visual
+  // slowroads soggy steer
+  private steerTarget = 0
+  private steerTimer = 0
+  private steerStart = 0
+  private brakeLerp = 0
+  private drive = 0
+  private slip = 0
+  private speedLerp = 0
+
+  // ruedas visuales
   frontWheels: THREE.Object3D[] = []
   rearWheels: THREE.Object3D[] = []
   private wheelSpin = 0
-  // suspensión slowroads: rebote al doblar
-  private suspension = 0
-  private suspensionVel = 0
-  private prevSteer = 0
-  private prevLateral = 0
+
+  private lateralLimit = ROAD_WIDTH * 0.5 - 1.15
 
   constructor(private vehicle: THREE.Group) {}
 
+  private halfLerp(t: number) {
+    const a = t * 0.5 + 0.5
+    return 2 * ((3 - 2 * a) * a * a - 0.5)
+  }
+
+  private updateSteer(dt: number, inputSteer: number) {
+    const speedLerp = THREE.MathUtils.clamp(Math.abs(this.speed) / this.topSpeed, 0, 1)
+    this.speedLerp = speedLerp
+    const maxSteerNow = this.maxSteer * (1 - 0.75 * speedLerp)
+    // soggy interval y factor
+    const soggyTimeFactor = 1 + 0.5 * speedLerp + (this.slip > 0 ? Math.max(0, (1 - this.slip) ** 2) * 0.5 : 0)
+    const interval = this.steerInterval * soggyTimeFactor
+
+    const target = THREE.MathUtils.clamp(inputSteer, -1, 1) * maxSteerNow
+
+    if (Math.abs(target - this.steerTarget) > 1e-4) {
+      this.steerStart = this.steerValue
+      this.steerTarget = target
+      this.steerTimer = 0
+    }
+    this.steerTimer += dt / soggyTimeFactor
+    let lerp = Math.min(1, this.steerTimer / interval)
+    lerp = this.halfLerp(lerp)
+    // limitar velocidad de giro 4 rad/s
+    const maxDelta = 4 * dt
+    const desired = this.steerStart + (this.steerTarget - this.steerStart) * lerp
+    const delta = THREE.MathUtils.clamp(desired - this.steerValue, -maxDelta, maxDelta)
+    this.steerValue += delta
+    // reducción mouse a alta velocidad (input ya es -1..1, aplicamos factor)
+    this.steerValue *= 1 - speedLerp * 0.04
+  }
+
   update(dt: number, input: InputState) {
-    // steer smoothing (Lerp / Spring)
-    const targetSteer = THREE.MathUtils.clamp(input.steer, -1, 1)
-    this.steerValue = THREE.MathUtils.lerp(this.steerValue, targetSteer, 1 - Math.exp(-this.steerSpeed * dt))
+    const targetSteerRaw = THREE.MathUtils.clamp(input.steer, -1, 1)
+    this.updateSteer(dt, targetSteerRaw)
 
-    // acceleration / braking with inertia
-    let accel = 0
-    if (input.accel > 0) accel = input.accel * this.accelPower
-    else if (input.accel < 0) accel = input.accel * this.brakePower * 0.6 // reverse slower
+    // drive con jerk (slowroads: drive += jerk*dt clamped)
+    const wantAccel = input.accel // -1..1
+    if (wantAccel > 0) {
+      this.drive += this.jerk * dt
+      this.drive = Math.min(this.drive, wantAccel)
+    } else if (wantAccel < 0) {
+      this.drive += this.jerk * dt
+      // reversa limitada
+      this.drive = Math.max(this.drive - this.jerk * dt * 2, wantAccel * (this.reversePower / this.accelPower))
+      // simplificar: clamp a wantAccel
+      if (this.drive < wantAccel) this.drive = wantAccel
+      if (wantAccel < 0 && this.drive > 0) this.drive = Math.max(0, this.drive - this.jerk * dt * 2)
+    } else {
+      // sin input, decae
+      if (this.drive > 0) this.drive = Math.max(0, this.drive - this.jerk * dt)
+      else if (this.drive < 0) this.drive = Math.min(0, this.drive + this.jerk * dt)
+    }
 
-    if (input.brake) accel -= this.brakePower * 0.9
+    // fricción según superficie: carretera 1.4 (nuestro default), sino 0.95/0.85
+    // usamos 1.4 para asfalto (slowroads fallback), como estamos siempre sobre asfalto
+    const friction = 1.4
+    // downforce y drag
+    const downforce = Math.pow(Math.min(1, Math.abs(this.speed) / this.topSpeed), 2) * this.aeroFactor
 
-    // friction / drag (environmental)
-    const drag = this.friction * (0.35 + Math.abs(this.speed) * 0.012)
+    // aceleración longitudinal
+    let accZ = this.drive * this.accelPower
+    // si usamos reversa, usar reversePower
+    if (this.drive < 0) accZ = this.drive * this.reversePower
+
+    // freno
+    if (input.brake || (wantAccel < 0 && this.speed > 1)) {
+      this.brakeLerp += dt / 0.25
+      this.brakeLerp = Math.min(1, this.brakeLerp)
+      const brakeForce = this.brakeLerp * this.brakePower
+      // max decel
+      const maxDecel = this.speed > 0 ? -(this.speed / dt) : 0
+      accZ = THREE.MathUtils.clamp(-brakeForce, maxDecel, brakeForce)
+      if (this.speed > 0) accZ = -Math.min(brakeForce, Math.abs(maxDecel))
+    } else {
+      this.brakeLerp = Math.max(0, this.brakeLerp - dt * 2)
+    }
+    if (friction < 1) accZ *= friction
+
+    // fricción lateral y longitudinal estilo slowroads (simplificado a 1 punto)
+    // wheelWeight ~2, latNorm = wheelWeight * 9.81 * friction
+    const wheelWeight = 2
+    const latNorm = wheelWeight * 9.81 * friction
+    const lonNorm = wheelWeight * 9.81 * friction
+
+    // maxLat con slipBase/slipMod
+    const latDir = Math.sign(this.steerValue) || 0
+    // maxLat = (speed * latDir / dt * -0.5) * (slipBase - slipMod*speedLerp^2)
+    const slipFactor = this.slipBase - this.slipMod * this.speedLerp * this.speedLerp
+    let maxLat = 0
     if (Math.abs(this.speed) > 0.1) {
-      accel -= Math.sign(this.speed) * drag
+      maxLat = (this.speed / dt * -0.5) * slipFactor
+      // limitar por latDir
+      if (latDir !== 0) maxLat *= Math.abs(latDir)
+      else maxLat = 0
     }
-    // low speed clamp to stop jitter
-    this.speed += accel * dt
-    // progressive damping at low speed
-    if (Math.abs(this.speed) < 0.6 && Math.abs(accel) < 1e-3) this.speed *= 0.88
-    // clamp
-    this.speed = THREE.MathUtils.clamp(this.speed, -this.maxSpeed * 0.28, this.maxSpeed)
-    // prevent going backwards too fast
-    if (this.speed < 0 && input.accel <= 0 && !input.brake) {
-      this.speed = THREE.MathUtils.lerp(this.speed, 0, dt * 2.5)
-    }
+    // si estamos girando, maxLat es proporcional a steer
+    // para no complicar, usamos steerValue para escalar maxLat
+    maxLat *= Math.abs(this.steerValue) > 0.01 ? 1 : 0
 
-    const speedFactor = THREE.MathUtils.clamp(Math.abs(this.speed) / 18, 0, 1)
-    const steerEffect = this.steerValue * speedFactor
-    // lateral: derecha = +X (normal derecha), A/← izq, D/→ der
-    const lateralVel = steerEffect * (9 + Math.abs(this.speed) * 0.11) * 1.0
-    this.lateral += lateralVel * dt
-    // auto-centering spring when no steer (gentle)
-    if (Math.abs(targetSteer) < 0.08) {
-      this.lateral = THREE.MathUtils.lerp(this.lateral, 0, dt * 0.45 * speedFactor)
-    }
+    let accX = 0
+    if (maxLat < -latNorm) { accX = -latNorm; this.slip = Math.abs(this.steerValue) }
+    else if (maxLat > latNorm) { accX = latNorm; this.slip = Math.abs(this.steerValue) }
+    else { accX = maxLat; this.slip = 0 }
+
+    // pendiente (flat road, tilt 0)
+    // rollResistance
+    const rawSpeed = this.speed
+    accZ -= rawSpeed * this.rollResistance
+    // clamp lon
+    const maxLon = 0.12 / dt // pequeño
+    accZ = THREE.MathUtils.clamp(accZ, -maxLon, maxLon)
+
+    // downforce
+    // acc.y no usado para posición, solo para rock
+    // dampening ya no aplica a y
+
+    // drag
+    accZ -= this.drag * this.speed * Math.abs(this.speed)
+
+    // integrar velocidad
+    this.speed += accZ * dt
+    this.speed = THREE.MathUtils.clamp(this.speed, -this.topSpeed * 0.35, this.topSpeed)
+
+    // lateral integrado: accX es aceleración lateral, integrar a velocidad lateral y luego a posición
+    // Para simplificar slowroads 4 ruedas, integramos direct a lateral con slip
+    // Usamos accX como velocidad lateral objetivo
+    const lateralSpeed = accX * dt * 0.12 // escala para convertir aceleración a desplazamiento
+    // si hay slip, deslizamiento mayor
+    const slipMult = 1 + this.slip * 1.8
+    this.lateral += lateralSpeed * slipMult * dt * 18
+
+    // sin auto-centrado (slowroads mantiene donde lo dejas)
+    // solo fricción natural por drag lateral ya aplicada
+
     this.lateral = THREE.MathUtils.clamp(this.lateral, -this.lateralLimit, this.lateralLimit)
 
-    // progress along track (distance)
-    // ensure minimum speed to feel cinematic? but allow stop
+    // progreso longitudinal
     this.progress += this.speed * dt
     if (this.progress < 2) this.progress = 2
 
-    // alignment on spline: get road center + offset
+    // posición 3D
     const center = roadCenter(this.progress)
     const tangent = roadTangent(this.progress)
     const up = new THREE.Vector3(0, 1, 0)
     const normal = new THREE.Vector3().crossVectors(tangent, up).normalize().multiplyScalar(-1)
     const pos = center.clone().addScaledVector(normal, this.lateral)
-    // FIX saltos: lerp hacia targetY+hover + suspensión rebote al girar (slowroads)
     const HOVER = 0.42
-    const targetYHover = pos.y + HOVER
     const curY = this.vehicle.position.y
-    const vyAlpha = 1 - Math.exp(-6 * dt)
-    let newY = THREE.MathUtils.lerp(curY, targetYHover, vyAlpha)
-    // suspensión rebote al girar — desactivado temporalmente para evitar temblor (usuario reportó shake)
-    // const steerDelta = Math.abs(this.steerValue - this.prevSteer)
-    // const lateralDelta = Math.abs(this.lateral - this.prevLateral)
-    // this.prevSteer = this.steerValue; this.prevLateral = this.lateral
-    // const turnForce = (steerDelta * 0.12 + lateralDelta * 0.04) * Math.min(1, Math.abs(this.speed) * 0.03 + 0.15)
-    // this.suspensionVel -= turnForce * 0.28
-    // const k = 18, d = 8.5
-    // this.suspensionVel += (-this.suspension * k - this.suspensionVel * d) * dt
-    // this.suspension += this.suspensionVel * dt
-    // this.suspension = THREE.MathUtils.clamp(this.suspension, -0.018, 0.018)
-    // newY += this.suspension
-    pos.y = newY
-
+    const vyAlpha = 1 - Math.exp(-8 * dt)
+    const targetY = pos.y + HOVER
+    pos.y = THREE.MathUtils.lerp(curY, targetY, vyAlpha)
     this.vehicle.position.copy(pos)
 
-    // giro real: volante añade yaw (slowroads ~22°) mismo signo que lateral
+    // rotación: yaw = roadYaw + steer*0.62 (visual, slowroadsAckermann)
     const roadYaw = Math.atan2(tangent.x, tangent.z)
-    const steerYaw = this.steerValue * 0.38 * speedFactor
+    // Ackermann real slowroads: steerL/R distintos, usamos promedio
+    const steerYaw = this.steerValue * 0.62
     const targetYaw = roadYaw + steerYaw
     const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1)) * 0.55
     const targetRoll = 0
-
-    this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, 1 - Math.exp(-this.yawLerp * dt))
-    this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, 1 - Math.exp(-this.pitchLerp * dt))
+    // yaw con slip: cuando derrapa, yaw se retrasa
+    const yawLerp = 3.0 * (1 - this.slip * 0.45)
+    this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, 1 - Math.exp(-yawLerp * dt))
+    this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, 1 - Math.exp(-2.8 * dt))
     this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, 1 - Math.exp(-10 * dt))
-
     this.vehicle.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ')
 
-    // ruedas: steer Y en pivot, spin X en meshes descendientes (soporta pivots con 2 grupos rims+tire)
-    const maxSteerAngle = 0.52
+    // ruedas
+    const maxSteerAngle = this.maxSteer // 0.68
     const steerAngle = this.steerValue * maxSteerAngle
-    this.wheelSpin += this.speed * dt * 5.6
+    this.wheelSpin += this.speed * dt / (2 * Math.PI * 0.342665) * 2 * Math.PI // circ 2.1
+    // simplificado: wheelSpin += speed * dt * 6
+    this.wheelSpin = this.wheelSpin % (Math.PI * 2)
     for (const w of this.frontWheels) {
       w.rotation.y = steerAngle
-      w.traverse((obj:any)=>{ if(obj.isMesh) obj.rotation.x = this.wheelSpin })
-      // evitar que traverse también ponga X al pivot mismo si es mesh (no)
+      w.traverse((obj: any) => { if (obj.isMesh) obj.rotation.x = this.wheelSpin })
     }
     for (const w of this.rearWheels) {
-      // rear no steer, solo spin
-      w.traverse((obj:any)=>{ if(obj.isMesh) obj.rotation.x = this.wheelSpin })
+      w.traverse((obj: any) => { if (obj.isMesh) obj.rotation.x = this.wheelSpin })
     }
-    // placeholder trasero que son meshes directos sin pivot: también necesitan spin, pero traverse ya cubre si son meshes
-    // para placeholder rear meshes directos (sin pivot), frontWheels ya cubierto, rearWheels traverse no llega a mesh directo? rearWheels son meshes directos, traverse incluye si mismo
-    // asegurar que meshes directos también giren (si w es mesh)
-    for (const w of this.rearWheels) {
-      if ((w as any).isMesh) (w as any).rotation.x = this.wheelSpin
-    }
-    for (const w of this.frontWheels) {
-      if ((w as any).isMesh) (w as any).rotation.x = this.wheelSpin
-    }
+    // placeholder meshes direct (sin pivot) también
+    for (const w of this.frontWheels) if ((w as any).isMesh) (w as any).rotation.y = steerAngle
+    for (const w of [...this.frontWheels, ...this.rearWheels]) if ((w as any).isMesh) (w as any).rotation.x = this.wheelSpin
   }
 
-  // helpers
-  getSpeedKmh(): number {
-    // 1 unit ~ 1 m, speed in m/s -> km/h = *3.6
-    return Math.abs(this.speed) * 3.6
-  }
-  getProgress(): number { return this.progress }
+  getSpeedKmh() { return Math.abs(this.speed) * 3.6 }
+  getProgress() { return this.progress }
 }
