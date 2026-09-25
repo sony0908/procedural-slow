@@ -1,0 +1,9 @@
+﻿audit + fix completo slowroads - giro, temblor, ruedas, iluminacion, legacy
+
+- VehicleController: yaw roadYaw + steer*0.38 (antes -) consistente con lateral + steer, steerSpeed 1.65->2.85 yawLerp 1.45->3.4 (coche gira real no solo desplaza)
+  suspension desactivada para no temblor, clamp Y sin bob
+- CameraRig: sin clamp duro jitter (solo >1.0 lerp 0.55), stiffness 78/22 distancia 6.0 height 2.35 fog 1m, lateral 0.12, roll 0 plano
+- main placeholder: pivots front + rear meshes, GLB deteccion grupos wheelFL/FR tire+rims (4 front 4 rear) no meshes sueltas, evita split caliper
+  VehicleController front pivot Y steer + child X spin (loop todos hijos)
+- CyberChunk/Terrain/main: road 0x1c1c2a roughness 0.38, terreno HSL mas claro + emissive 0.42, fog 0.008->0.0042, hemisphere 1.55 sun 3.6/1.6 ambient 0.88 exposure 1.55, estrellas fog false, fillGeo leak eliminado, horizon alloc eliminado
+- legacy: borrados FPSController, ChunkManager viejo, world.worker, PerformanceMonitor, src/player src/workers, package name zombie->cyberdrive-3d

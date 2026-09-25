@@ -119,23 +119,16 @@ export class CameraRig {
       }
     }
 
-    // SLOWROADS: cámara pegada, retroceso MÁX 1.0m (usuario pidió ≤1m)
-    // spring ultra-rígido + clamp duro
+    // SLOWROADS: cámara pegada, retroceso natural ≤1m por spring rígido (sin clamp duro que temblaba)
     const accel = this.targetPos.clone().sub(this.pos).multiplyScalar(this.stiffness)
     accel.add(this.vel.clone().multiplyScalar(-this.damping))
     this.vel.addScaledVector(accel, dt)
     this.pos.addScaledVector(this.vel, dt)
-    // clamp duro: nunca más de 1.0m del target
+    // clamp suave solo si supera 1.0m (no 0.45) para no jitter
     const distErr = this.targetPos.distanceTo(this.pos)
-    if (distErr > 0.95) {
-      // proyectar hacia target limitando a 0.95m (margen antes de 1.0)
-      const dir = this.pos.clone().sub(this.targetPos).normalize()
-      this.pos.copy(this.targetPos).addScaledVector(dir, 0.95)
-      this.vel.multiplyScalar(0.55)
-    } else if (distErr > 0.45) {
-      // suavizado extra cuando supera 0.45 para que no llegue a 1.0
-      this.pos.lerp(this.targetPos, 1 - Math.exp(-32 * dt))
-      this.vel.multiplyScalar(0.68)
+    if (distErr > 1.0) {
+      this.pos.lerp(this.targetPos, 0.55)
+      this.vel.multiplyScalar(0.5)
     }
 
     this.camera.position.copy(this.pos)

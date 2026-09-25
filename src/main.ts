@@ -26,24 +26,24 @@ function showNotice(t: string, ms = 2400) {
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
 renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.toneMapping = THREE.ACESFilmicToneMapping
-renderer.toneMappingExposure = 1.15
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75))
+renderer.toneMappingExposure = 1.55
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.65))
 renderer.setClearColor(0x020208, 1)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x020208)
-scene.fog = new THREE.FogExp2(0x020208, 0.008) // spec: 0x020208 0.008
+scene.fog = new THREE.FogExp2(0x020208, 0.0042) // aclarado: 0.008 era muy denso y oscurecía todo
 
 const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 1400)
 camera.position.set(0, 3.2, -8)
 
-scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x1a1a2e, 1.35))
-const sun = new THREE.DirectionalLight(0xfff6e0, 3.2); sun.position.set(-30, 55, -18); sun.castShadow=false; scene.add(sun)
-const sun2 = new THREE.DirectionalLight(0xb8d6ff, 1.4); sun2.position.set(35, 40, 22); scene.add(sun2)
-const neonFill = new THREE.PointLight(0x00ffff, 28, 35); neonFill.position.set(0, 6, 0); scene.add(neonFill)
-const magentaFill = new THREE.PointLight(0xff0055, 18, 28); magentaFill.position.set(0, 3.5, -6); scene.add(magentaFill)
-scene.add(new THREE.AmbientLight(0xffffff, 0.72))
-renderer.toneMappingExposure = 1.45
+scene.add(new THREE.HemisphereLight(0xd8e8ff, 0x1e1e3a, 1.55))
+const sun = new THREE.DirectionalLight(0xfff6e0, 3.6); sun.position.set(-30, 55, -18); sun.castShadow=false; scene.add(sun)
+const sun2 = new THREE.DirectionalLight(0xb8d6ff, 1.6); sun2.position.set(35, 40, 22); scene.add(sun2)
+const neonFill = new THREE.PointLight(0x00ffff, 30, 38); neonFill.position.set(0, 6, 0); scene.add(neonFill)
+const magentaFill = new THREE.PointLight(0xff0055, 20, 30); magentaFill.position.set(0, 3.5, -6); scene.add(magentaFill)
+scene.add(new THREE.AmbientLight(0xffffff, 0.88))
+renderer.toneMappingExposure = 1.55
 
 // ——— Stars (partículas pequeñas inmóviles lejanas) ———
 function createStars() {
@@ -77,14 +77,15 @@ function createStars() {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
   const mat = new THREE.PointsMaterial({
-    size: 1.35,
+    size: 1.45,
     vertexColors: true,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.98,
     sizeAttenuation: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending
   })
+  ;(mat as any).fog = false
   const points = new THREE.Points(geo, mat)
   points.frustumCulled = false
   scene.add(points)
@@ -92,39 +93,7 @@ function createStars() {
 }
 const stars = createStars()
 
-// add distant synthwave mountains silhouette via large low-poly plane far?
-// We'll just rely on fog + terrain chunks extending to horizon, plus a large horizon mesh
-function createHorizon() {
-  const geo = new THREE.PlaneGeometry(5200, 520, 64, 1)
-  const pos = geo.attributes.position as THREE.BufferAttribute
-  // create jagged outrun peaks
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i)
-    const y = pos.getY(i) // becomes height after rotation
-    // simple noise for silhouette
-    const h = Math.pow(Math.abs(Math.sin(x * 0.0021) * 0.7 + Math.sin(x * 0.0053) * 0.3 + Math.cos(x * 0.0011) * 0.5), 2) * 140
-    pos.setY(i, y + h)
-  }
-  geo.computeVertexNormals()
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x0a0a1e,
-    emissive: 0x12071a,
-    emissiveIntensity: 0.6,
-    roughness: 1,
-    flatShading: true,
-    wireframe: false,
-    side: THREE.DoubleSide
-  })
-  const mesh = new THREE.Mesh(geo, mat)
-  mesh.rotation.x = -Math.PI / 2 // already? Actually plane default XY; we want vertical billboard far ahead? simpler as ground horizon?
-  // We'll place horizon as ring: rotate to stand vertical facing camera
-  // Instead make it horizontal far ground: keep rotation -PI/2 and position far ahead, below
-  mesh.position.set(0, -18, 700)
-  // Actually better to create two horizon walls left/right? Keep simple: not adding to avoid clutter
-  // Don't add for now – terrain already gives mountains
-  // scene.add(mesh)
-}
-createHorizon()
+// horizon sintético eliminado (usamos neblina + terreno procedural)
 
 // ——— World ———
 const chunkMgr = new CyberChunkManager(scene)
@@ -282,14 +251,9 @@ async function loadVehicle() {
           if (n.includes('tire') || n.includes('rim') || n.includes('wheel')) rearGroups.push(o)
         }
       })
-      // deduplicar por wheel: agrupar por wheelFL/FR => solo necesitamos 1 pivot por rueda, no 2 (rims+tire)
-      // Elegimos tire como referencia (más grande) para steer/spin, el otro lo dejamos quieto o lo sincronizamos
-      const pickTire = (groups: THREE.Object3D[]) => {
-        const tires = groups.filter(g=> g.name.toLowerCase().includes('tire'))
-        return tires.length ? tires : groups.slice(0,2)
-      }
-      const front = pickTire(frontGroups)
-      const rear = pickTire(rearGroups)
+      // usar todos los grupos rims+tire por rueda (4 delante, 4 detrás) para que rims y tire giren juntos
+      const front = frontGroups // 4: FL rims, FL tire, FR rims, FR tire
+      const rear = rearGroups // 4: BL rims/tire, BR rims/tire
       // fallback si no hay grupos (buscar meshes)
       if (front.length === 0) {
         const meshes: THREE.Object3D[] = []

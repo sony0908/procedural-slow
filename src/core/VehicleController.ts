@@ -17,14 +17,13 @@ export class VehicleController {
   pitch = 0
   roll = 0
 
-  // SLOWROADS inspirado: inercia suave, steering no instantáneo, sin roll
   maxSpeed = 88
-  accelPower = 18 // antes 26 muy brusco
+  accelPower = 18
   brakePower = 34
   friction = 1.15
-  steerSpeed = 1.65 // antes 3.2 → giro más pesado y cinemático
+  steerSpeed = 2.85 // más reactivo (antes 1.65 muy flotante → parecía no girar)
   lateralSpeed = 14
-  yawLerp = 1.45 // antes 2.2 → guiñada más flotante
+  yawLerp = 3.4 // antes 1.45 → guiñada responde en ~0.3s no 2s
   pitchLerp = 1.35
   rollLerp = 12
 
@@ -112,9 +111,9 @@ export class VehicleController {
 
     this.vehicle.position.copy(pos)
 
-    // FIX giro rígido: coche debe girar (yaw) al doblar, no solo desplazarse
+    // giro real: volante añade yaw (slowroads ~22°) mismo signo que lateral
     const roadYaw = Math.atan2(tangent.x, tangent.z)
-    const steerYaw = -this.steerValue * 0.42 * speedFactor // volante añade guiñada (slowroads: ~24° max)
+    const steerYaw = this.steerValue * 0.38 * speedFactor
     const targetYaw = roadYaw + steerYaw
     const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1)) * 0.55
     const targetRoll = 0

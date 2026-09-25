@@ -77,17 +77,16 @@ export function buildTerrainChunk(z0: number, z1: number): THREE.BufferGeometry 
   }
   idx.needsUpdate = true
   geom.computeVertexNormals()
-  // add vertex colors for gradient (dark valley to magenta tint peak)
+  // vertex colors más brillantes para escena iluminada
   const colors: number[] = []
   const color = new THREE.Color()
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i)
     const n = Math.min(1, y / 55)
-    // gradient: valley #0a0a1a -> mid #1a1a3a -> peak #402a5a with cyan tint
     if (n < 0.5) {
-      color.setHSL(0.74 + n * 0.06, 0.55, 0.08 + n * 0.18)
+      color.setHSL(0.74 + n * 0.04, 0.45, 0.14 + n * 0.16)
     } else {
-      color.setHSL(0.80 - (n - 0.5) * 0.12, 0.62, 0.17 + (n - 0.5) * 0.22)
+      color.setHSL(0.78 - (n - 0.5) * 0.08, 0.52, 0.22 + (n - 0.5) * 0.24)
     }
     colors.push(color.r, color.g, color.b)
   }
@@ -97,14 +96,13 @@ export function buildTerrainChunk(z0: number, z1: number): THREE.BufferGeometry 
 }
 
 export function createTerrainMaterial(): THREE.Material {
-  // Spec: wireframe or flatShading con bordes fluorescentes
   return new THREE.MeshStandardMaterial({
     vertexColors: true,
     wireframe: true,
-    roughness: 0.95,
-    metalness: 0.08,
-    emissive: new THREE.Color(0x080818),
-    emissiveIntensity: 0.25,
+    roughness: 0.85,
+    metalness: 0.07,
+    emissive: new THREE.Color(0x121228),
+    emissiveIntensity: 0.42,
     flatShading: true,
     transparent: true,
     opacity: 0.98,

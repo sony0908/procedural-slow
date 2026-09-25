@@ -20,15 +20,15 @@ export class CyberChunk {
   }
 
   private build() {
-    // 1) Road ribbon (asphalt)
+    // 1) Road ribbon (asphalt) — aclarado para no verse negro
     const roadGeo = buildRoadRibbon(this.z0, this.z1, ROAD_WIDTH, 48)
     this.geos.push(roadGeo)
     const roadMat = new THREE.MeshStandardMaterial({
-      color: 0x0a0a10,
-      roughness: 0.52,
-      metalness: 0.42,
-      emissive: new THREE.Color(0x020208),
-      emissiveIntensity: 0.15
+      color: 0x1c1c2a,
+      roughness: 0.38,
+      metalness: 0.28,
+      emissive: new THREE.Color(0x0a0a1e),
+      emissiveIntensity: 0.22
     })
     const roadMesh = new THREE.Mesh(roadGeo, roadMat)
     roadMesh.receiveShadow = false
@@ -72,11 +72,7 @@ export class CyberChunk {
     terrainMesh.frustumCulled = false
     this.group.add(terrainMesh); this.meshes.push(terrainMesh)
 
-    // 4) Ground fill under road for neon glow (dark plane)
-    const fillGeo = new THREE.PlaneGeometry(ROAD_WIDTH + 60, CHUNK_LENGTH + 10, 1, 1)
-    // need to follow curve: instead add simple large plane under road at average y
-    // We'll position it flat at y = -0.4 and centered at road
-    // Instead create a strip similar to road but slightly larger and lower
+    // 4) Ground fill under road for neon glow
     const underGeo = this.buildUnderGlow(this.z0, this.z1)
     const underMat = new THREE.MeshStandardMaterial({
       color: 0x020208,
