@@ -62,11 +62,11 @@ export class VehicleController {
     const speedLerp = THREE.MathUtils.clamp(Math.abs(this.speed) / this.topSpeed, 0, 1)
     this.speedLerp = speedLerp
     const maxSteerNow = this.maxSteer * (1 - 0.75 * speedLerp)
-    // soggy interval y factor
     const soggyTimeFactor = 1 + 0.5 * speedLerp + (this.slip > 0 ? Math.max(0, (1 - this.slip) ** 2) * 0.5 : 0)
     const interval = this.steerInterval * soggyTimeFactor
 
-    const target = THREE.MathUtils.clamp(inputSteer, -1, 1) * maxSteerNow
+    // FIX controles invertidos: invertir input (izquierda→izquierda)
+    const target = THREE.MathUtils.clamp(-inputSteer, -1, 1) * maxSteerNow
 
     if (Math.abs(target - this.steerTarget) > 1e-4) {
       this.steerStart = this.steerValue
@@ -202,7 +202,7 @@ export class VehicleController {
     const pos = center.clone().addScaledVector(normal, this.lateral)
     const HOVER = 0.42
     const curY = this.vehicle.position.y
-    const vyAlpha = 1 - Math.exp(-8 * dt)
+    const vyAlpha = 1 - Math.exp(-4 * dt) // más suave para no tiritar a baja velocidad (antes 8)
     const targetY = pos.y + HOVER
     pos.y = THREE.MathUtils.lerp(curY, targetY, vyAlpha)
     this.vehicle.position.copy(pos)
@@ -221,11 +221,10 @@ export class VehicleController {
     this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, 1 - Math.exp(-10 * dt))
     this.vehicle.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ')
 
-    // ruedas
+    // ruedas: steer invertido ya corregido, spin sentido contrario (estaba al revés)
     const maxSteerAngle = this.maxSteer // 0.68
     const steerAngle = this.steerValue * maxSteerAngle
-    this.wheelSpin += this.speed * dt / (2 * Math.PI * 0.342665) * 2 * Math.PI // circ 2.1
-    // simplificado: wheelSpin += speed * dt * 6
+    this.wheelSpin -= this.speed * dt / 0.342665 // invertido: antes + ahora -
     this.wheelSpin = this.wheelSpin % (Math.PI * 2)
     for (const w of this.frontWheels) {
       w.rotation.y = steerAngle
