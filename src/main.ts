@@ -138,6 +138,8 @@ scene.add(vehicleGroup)
 
 // placeholder while loading GLB: low-poly placeholder + lights
 let vehicleMesh: THREE.Group | null = null
+let placeholderFrontPivots: THREE.Group[] = []
+let placeholderRearMeshes: THREE.Mesh[] = []
 function createPlaceholder() {
   const g = new THREE.Group()
   // chassis box
@@ -152,12 +154,25 @@ function createPlaceholder() {
   const cab = new THREE.Mesh(cabGeo, cabMat)
   cab.position.set(0, 0.98, -0.22)
   g.add(cab)
-  // wheels
+  // ruedas con pivot para steer + spin (slowroads bounce)
   const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.44, 16)
   wheelGeo.rotateZ(Math.PI / 2)
   const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.9 })
   const offsets = [[0.92, 0.18, 1.15], [-0.92, 0.18, 1.15], [0.92, 0.18, -1.12], [-0.92, 0.18, -1.12]]
-  for (const o of offsets) { const w = new THREE.Mesh(wheelGeo, wheelMat); w.position.set(o[0], o[1], o[2]); g.add(w) }
+  placeholderFrontPivots = []; placeholderRearMeshes = []
+  offsets.forEach((o, idx) => {
+    const isFront = idx < 2
+    if (isFront) {
+      const pivot = new THREE.Group(); pivot.position.set(o[0], o[1], o[2])
+      const w = new THREE.Mesh(wheelGeo, wheelMat)
+      pivot.add(w)
+      g.add(pivot)
+      placeholderFrontPivots.push(pivot)
+    } else {
+      const w = new THREE.Mesh(wheelGeo, wheelMat); w.position.set(o[0], o[1], o[2]); g.add(w)
+      placeholderRearMeshes.push(w)
+    }
+  })
   // headlights cyan emissive
   const hlGeo = new THREE.SphereGeometry(0.14, 10, 10)
   const hlMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 4.2 })
@@ -251,6 +266,81 @@ async function loadVehicle() {
     ;(vehicleGroup as any)._hl = hl
     ;(vehicleGroup as any)._tl = tl
 
+    // --- ruedas delanteras giran (pedido) — detectar por nombre o posición ---
+    try {
+      const candidates: THREE.Object3D[] = []
+      root.traverse((o: any) => {
+        if (o.isMesh) {
+          const n = (o.name || '').toLowerCase()
+          if (n.includes('wheel') || n.includes('roue') || n.includes('tire') || n.includes('rim') || n.includes('pneu')) {
+            candidates.push(o)
+          }
+        }
+      })
+      // fallback heurística por posición si no hay nombres
+      if (candidates.length === 0) {
+        const tmp: { obj: THREE.Object3D, z: number }[] = []
+        root.traverse((o: any) => {
+          if (o.isMesh) {
+            const pos = new THREE.Vector3(); // local
+            pos.copy(o.position)
+            // buscar meshes bajos y cerca del suelo, tamaño rueda
+            if (Math.abs(pos.y) < 1.2 && Math.abs(pos.x) > 0.4 && Math.abs(pos.z) > 0.5) {
+              tmp.push({ obj: o, z: pos.z })
+            }
+          }
+        })
+        tmp.sort((a,b)=> b.z - a.z)
+        tmp.slice(0,4).forEach(t=> candidates.push(t.obj))
+      }
+      if (candidates.length >= 2) {
+        // ordenar por Z local: frente mayor Z
+        candidates.sort((a,b)=> (b as any).position.z - (a as any).position.z)
+        const front = candidates.slice(0,2)
+        const rear = candidates.slice(2,4)
+        // envolver en pivots si es necesario para steer sin romper spin
+        // Si la rueda ya está en un grupo, usamos el padre como pivot si tiene sentido
+        // Simplificamos: usamos la mesh directa (VehicleController maneja pivot hijo)
+        // Para GLB sin pivot, creamos un grupo pivot y reparentamos
+        const toPivot = (m: THREE.Object3D) => {
+          // si ya tiene pivot (padre con pocos hijos), usarlo; si no, crear uno
+          // Heurística: si el mesh está solo en su grupo, usar grupo
+          // Creamos pivot siempre para no romper jerarquía: clonamos posición
+          const pivot = new THREE.Group()
+          const parent = m.parent!
+          const worldPos = new THREE.Vector3(); m.getWorldPosition(worldPos)
+          // convertir a local de root
+          root.worldToLocal(worldPos)
+          // mover mesh a 0,0,0 dentro de pivot
+          // Guardar transform local de mesh
+          const wasPos = m.position.clone(); const wasRot = (m as any).rotation.clone(); const wasScale = (m as any).scale.clone()
+          parent.remove(m)
+          m.position.set(0,0,0)
+          // pivot en la posición original
+          pivot.position.copy(wasPos)
+          // preservar rot/scale originales en mesh (ya)
+          pivot.add(m)
+          parent.add(pivot)
+          return pivot
+        }
+        const frontPivots: THREE.Object3D[] = []
+        const rearPivots: THREE.Object3D[] = []
+        // solo pivotamos front para steer; rear solo spin (no necesita pivot pero creamos igual para spin hijo)
+        front.forEach(m=> frontPivots.push(toPivot(m)))
+        rear.forEach(m=>{
+          const pivot = new THREE.Group(); const parent=m.parent!; const wasPos=m.position.clone()
+          parent.remove(m); m.position.set(0,0,0); pivot.position.copy(wasPos); pivot.add(m); parent.add(pivot)
+          rearPivots.push(pivot)
+        })
+        vehicleCtrl.frontWheels = frontPivots
+        vehicleCtrl.rearWheels = rearPivots
+        console.log('Ruedas detectadas', { front: frontPivots.map(p=>p.position), rear: rearPivots.map(p=>p.position) })
+        showNotice(`Ruedas steer activas: ${frontPivots.length} delante`, 1600)
+      } else {
+        console.warn('No se detectaron ruedas frontales', candidates.length)
+      }
+    } catch(err){ console.warn('setup ruedas GLB falló', err) }
+
     showNotice('Citroën DS Survolt cargado ✓', 2000)
   } catch (e) {
     console.error('GLB load failed', e)
@@ -311,6 +401,12 @@ canvas.addEventListener('touchend', () => { touchSteer = 0; touchAccel = 0 })
 // ——— Controllers ———
 const vehicleCtrl = new VehicleController(vehicleGroup)
 const camRig = new CameraRig(camera, vehicleGroup)
+camRig.attachDOM(canvas)
+// asignar ruedas placeholder (pivot front) para steer visual
+if (placeholderFrontPivots.length) {
+  vehicleCtrl.frontWheels = placeholderFrontPivots as any
+  vehicleCtrl.rearWheels = placeholderRearMeshes as any
+}
 
 // start state
 let running = false

@@ -29,6 +29,15 @@ export class VehicleController {
   rollLerp = 12
 
   private lateralLimit = ROAD_WIDTH * 0.5 - 1.15 // leave margin for car width
+  // ruedas delanteras para steer visual
+  frontWheels: THREE.Object3D[] = []
+  rearWheels: THREE.Object3D[] = []
+  private wheelSpin = 0
+  // suspensión slowroads: rebote al doblar
+  private suspension = 0
+  private suspensionVel = 0
+  private prevSteer = 0
+  private prevLateral = 0
 
   constructor(private vehicle: THREE.Group) {}
 
@@ -83,13 +92,28 @@ export class VehicleController {
     const up = new THREE.Vector3(0, 1, 0)
     const normal = new THREE.Vector3().crossVectors(tangent, up).normalize().multiplyScalar(-1)
     const pos = center.clone().addScaledVector(normal, this.lateral)
-    // FIX saltos: lerp hacia targetY+hover (no hacia targetY solo)
-    const HOVER = 0.42 // altura sobre asfalto (antes 0.72 causaba divergencia)
+    // FIX saltos: lerp hacia targetY+hover + suspensión rebote al girar (slowroads)
+    const HOVER = 0.42
     const targetYHover = pos.y + HOVER
     const curY = this.vehicle.position.y
-    // spring suave sin overshoot (8 -> 6 para menos nervioso)
     const vyAlpha = 1 - Math.exp(-6 * dt)
-    const newY = THREE.MathUtils.lerp(curY, targetYHover, vyAlpha)
+    let newY = THREE.MathUtils.lerp(curY, targetYHover, vyAlpha)
+    // suspensión: rebote de neumáticos al doblar (slowroads fisica visual plana pero con bounce vertical)
+    const steerDelta = Math.abs(this.steerValue - this.prevSteer)
+    const lateralDelta = Math.abs(this.lateral - this.prevLateral)
+    this.prevSteer = this.steerValue; this.prevLateral = this.lateral
+    // fuerza lateral al girar brusco
+    const turnForce = (steerDelta * 0.55 + lateralDelta * 0.18) * Math.min(1, Math.abs(this.speed) * 0.06 + 0.35)
+    // impulso hacia abajo al iniciar giro
+    this.suspensionVel -= turnForce * 1.6
+    // muelle-amortiguador (crítico, no overshoot grande)
+    const k = 34, d = 9.2
+    this.suspensionVel += (-this.suspension * k - this.suspensionVel * d) * dt
+    this.suspension += this.suspensionVel * dt
+    this.suspension = THREE.MathUtils.clamp(this.suspension, -0.11, 0.11)
+    newY += this.suspension
+    // micro-bob por velocidad (muy leve, slowroads casi plano)
+    newY += Math.sin(this.progress * 0.11) * 0.004 * Math.min(1, Math.abs(this.speed)/45)
     pos.y = newY
 
     this.vehicle.position.copy(pos)
@@ -105,10 +129,27 @@ export class VehicleController {
 
     this.vehicle.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ')
 
-    // bob de suspensión desactivado para 60 FPS estable (antes 0.02 causaba saltos perceptibles)
-    // si se quiere, usar amortiguado muy leve:
-    // const bob = Math.sin(this.progress * 0.12) * 0.007 * (Math.abs(this.speed)/this.maxSpeed)
-    // this.vehicle.position.y += bob
+    // ruedas delanteras giran al doblar + spin por velocidad (pedido)
+    const maxSteerAngle = 0.58 // ~33°
+    const steerAngle = this.steerValue * maxSteerAngle
+    this.wheelSpin += this.speed * dt * 5.2
+    // front: steer (Y) + spin (X en hijo si pivot)
+    for (const w of this.frontWheels) {
+      if (w.children.length > 0 && (w.children[0] as any).isMesh) {
+        w.rotation.y = steerAngle
+        ;(w.children[0] as THREE.Object3D).rotation.x = this.wheelSpin
+      } else {
+        w.rotation.y = steerAngle
+        w.rotation.x = this.wheelSpin
+      }
+    }
+    for (const w of this.rearWheels) {
+      if (w.children.length > 0 && (w.children[0] as any).isMesh) {
+        ;(w.children[0] as THREE.Object3D).rotation.x = this.wheelSpin
+      } else {
+        w.rotation.x = this.wheelSpin
+      }
+    }
   }
 
   // helpers

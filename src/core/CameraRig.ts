@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { roadTangent } from '../world/Road'
+import { roadCenter, roadTangent } from '../world/Road'
 
 export class CameraRig {
   private pos = new THREE.Vector3()
@@ -17,22 +17,107 @@ export class CameraRig {
   fovBase = 66
   fovMaxBoost = 2.2 // antes 7 → aún parecía pull-back; slowroads usa ~2
 
+  // órbita libre con ratón (slowroads: arrastrar para ver el auto 360°)
+  orbitYaw = 0
+  orbitPitch = 0
+  private isDragging = false
+  private lastX = 0
+  private lastY = 0
+  private idleReturn = 0 // 0 = no retorno automático, >0 = lerp a 0
+
   constructor(private camera: THREE.PerspectiveCamera, private vehicle: THREE.Group) {
     this.pos.copy(vehicle.position).add(new THREE.Vector3(0, this.height, -this.distance))
   }
 
+  attachDOM(dom: HTMLElement) {
+    dom.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return
+      this.isDragging = true; this.lastX = e.clientX; this.lastY = e.clientY
+      dom.style.cursor = 'grabbing'
+      e.preventDefault()
+    })
+    window.addEventListener('mouseup', () => {
+      if (this.isDragging) { this.isDragging = false; dom.style.cursor = 'grab' }
+    })
+    dom.addEventListener('mousemove', (e) => {
+      if (!this.isDragging) return
+      const dx = e.clientX - this.lastX
+      const dy = e.clientY - this.lastY
+      this.lastX = e.clientX; this.lastY = e.clientY
+      this.orbitYaw -= dx * 0.0052   // arrastrar derecha → cámara a derecha (yaw negativo)
+      this.orbitPitch -= dy * 0.0040
+      this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch, -0.62, 0.78) // no voltear bajo suelo
+      this.idleReturn = 0
+    })
+    // touch
+    dom.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return
+      this.isDragging = true; this.lastX = e.touches[0].clientX; this.lastY = e.touches[0].clientY
+    }, { passive: true })
+    window.addEventListener('touchend', () => { this.isDragging = false })
+    dom.addEventListener('touchmove', (e) => {
+      if (!this.isDragging || e.touches.length !== 1) return
+      const dx = e.touches[0].clientX - this.lastX
+      const dy = e.touches[0].clientY - this.lastY
+      this.lastX = e.touches[0].clientX; this.lastY = e.touches[0].clientY
+      this.orbitYaw -= dx * 0.006
+      this.orbitPitch -= dy * 0.0048
+      this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch, -0.62, 0.78)
+      this.idleReturn = 0
+    }, { passive: true })
+    dom.addEventListener('wheel', (e) => {
+      this.distance = THREE.MathUtils.clamp(this.distance + Math.sign(e.deltaY) * 0.42, 3.2, 11)
+      e.preventDefault()
+    }, { passive: false })
+    // doble click o R resetea órbita
+    dom.addEventListener('dblclick', () => this.resetOrbit())
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyR' && !e.ctrlKey) this.resetOrbit()
+    })
+    dom.style.cursor = 'grab'
+  }
+
+  resetOrbit() {
+    // animar retorno suave a 0 en ~0.6s
+    this.idleReturn = 1
+    // no snap inmediato, lerp en update
+  }
+
   update(dt: number, speed: number, steerValue: number, progress: number) {
     const t = roadTangent(progress)
-    // chase position: behind vehicle along tangent
+    // SLOWROADS: cámara sigue el centro de la pista, NO el lateral del coche (independiente al girar)
+    const roadPos = roadCenter(progress)
     const vehPos = this.vehicle.position.clone()
-    // offset behind: -tangent * distance + up*height, with small lateral offset to see curve
-    const behind = t.clone().multiplyScalar(-this.distance)
+    // offset base detrás + arriba
+    const behindBase = t.clone().multiplyScalar(-this.distance)
     const up = new THREE.Vector3(0, this.height, 0)
-    // drift lateral mínimo (slowroads no desplaza cámara al girar)
-    const right = new THREE.Vector3().crossVectors(t, new THREE.Vector3(0,1,0)).normalize().multiplyScalar(-1)
-    const lateralShift = right.clone().multiplyScalar(steerValue * 0.12)
+    let offset = behindBase.clone().add(up)
 
-    this.targetPos.copy(vehPos).add(behind).add(up).add(lateralShift)
+    // órbita libre: rotar offset alrededor del coche
+    if (Math.abs(this.orbitYaw) > 1e-4 || Math.abs(this.orbitPitch) > 1e-4) {
+      // yaw alrededor de Y
+      if (Math.abs(this.orbitYaw) > 1e-4) {
+        const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.orbitYaw)
+        offset.applyQuaternion(qYaw)
+      }
+      // pitch alrededor de right del camino
+      if (Math.abs(this.orbitPitch) > 1e-4) {
+        const right = new THREE.Vector3().crossVectors(t, new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(-1)
+        const qPitch = new THREE.Quaternion().setFromAxisAngle(right, this.orbitPitch)
+        offset.applyQuaternion(qPitch)
+      }
+    }
+    // si no hay órbita, la cámara está en roadPos+offset; si hay órbita, orbita alrededor de vehPos para ver el auto 360°
+    const pivot = (Math.abs(this.orbitYaw) > 0.01 || Math.abs(this.orbitPitch) > 0.01) ? vehPos : roadPos
+    this.targetPos.copy(pivot).add(offset)
+    // retorno suave a centro si se pidió reset
+    if (this.idleReturn > 0) {
+      this.orbitYaw = THREE.MathUtils.lerp(this.orbitYaw, 0, 1 - Math.exp(-4.5 * dt))
+      this.orbitPitch = THREE.MathUtils.lerp(this.orbitPitch, 0, 1 - Math.exp(-4.5 * dt))
+      if (Math.abs(this.orbitYaw) < 0.002 && Math.abs(this.orbitPitch) < 0.002) {
+        this.orbitYaw = 0; this.orbitPitch = 0; this.idleReturn = 0
+      }
+    }
 
     // SLOWROADS: cámara pegada, retroceso MÁX 1.0m (usuario pidió ≤1m)
     // spring ultra-rígido + clamp duro
@@ -55,9 +140,14 @@ export class CameraRig {
 
     this.camera.position.copy(this.pos)
 
-    // look ahead corto y estable (slowroads mira justo delante)
-    const aheadPos = vehPos.clone().add(t.clone().multiplyScalar(this.lookAhead))
-    aheadPos.y += 0.45
+    // lookAt: si hay órbita, mirar al coche; si no, mirar curva adelante (slowroads)
+    const isOrbiting = Math.abs(this.orbitYaw) > 0.02 || Math.abs(this.orbitPitch) > 0.02 || this.isDragging
+    let aheadPos: THREE.Vector3
+    if (isOrbiting) {
+      aheadPos = vehPos.clone(); aheadPos.y += 0.42
+    } else {
+      aheadPos = roadCenter(progress + this.lookAhead).clone(); aheadPos.y += 0.45
+    }
     // smooth lookAt
     this.lookAt.lerp(aheadPos, 1 - Math.exp(-7 * dt))
     this.camera.lookAt(this.lookAt)
@@ -83,7 +173,8 @@ export class CameraRig {
 
   snap(vehiclePos: THREE.Vector3, progress: number) {
     const t = roadTangent(progress)
-    this.pos.copy(vehiclePos).add(t.clone().multiplyScalar(-this.distance)).add(new THREE.Vector3(0,this.height,0))
+    const rc = roadCenter(progress)
+    this.pos.copy(rc).add(t.clone().multiplyScalar(-this.distance)).add(new THREE.Vector3(0,this.height,0))
     this.vel.set(0,0,0)
     this.camera.position.copy(this.pos)
   }
