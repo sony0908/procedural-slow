@@ -69,11 +69,10 @@ export class VehicleController {
       this.speed = THREE.MathUtils.lerp(this.speed, 0, dt * 2.5)
     }
 
-    // FIX controles invertidos: invertir lateral (antes derecha→izq)
-    const speedFactor = THREE.MathUtils.clamp(Math.abs(this.speed) / 18, 0, 1) // 0 when stopped, 1 at 18 u/s
+    const speedFactor = THREE.MathUtils.clamp(Math.abs(this.speed) / 18, 0, 1)
     const steerEffect = this.steerValue * speedFactor
-    // lateral invertido para que A/← = izq y D/→ = der
-    const lateralVel = -steerEffect * (9 + Math.abs(this.speed) * 0.11) * 1.0 // invertido
+    // lateral: derecha = +X (normal derecha), A/← izq, D/→ der
+    const lateralVel = steerEffect * (9 + Math.abs(this.speed) * 0.11) * 1.0
     this.lateral += lateralVel * dt
     // auto-centering spring when no steer (gentle)
     if (Math.abs(targetSteer) < 0.08) {
@@ -98,56 +97,55 @@ export class VehicleController {
     const curY = this.vehicle.position.y
     const vyAlpha = 1 - Math.exp(-6 * dt)
     let newY = THREE.MathUtils.lerp(curY, targetYHover, vyAlpha)
-    // suspensión: rebote de neumáticos al doblar (slowroads fisica visual plana pero con bounce vertical)
-    const steerDelta = Math.abs(this.steerValue - this.prevSteer)
-    const lateralDelta = Math.abs(this.lateral - this.prevLateral)
-    this.prevSteer = this.steerValue; this.prevLateral = this.lateral
-    // fuerza lateral al girar brusco
-    const turnForce = (steerDelta * 0.55 + lateralDelta * 0.18) * Math.min(1, Math.abs(this.speed) * 0.06 + 0.35)
-    // impulso hacia abajo al iniciar giro
-    this.suspensionVel -= turnForce * 1.6
-    // muelle-amortiguador (crítico, no overshoot grande)
-    const k = 34, d = 9.2
-    this.suspensionVel += (-this.suspension * k - this.suspensionVel * d) * dt
-    this.suspension += this.suspensionVel * dt
-    this.suspension = THREE.MathUtils.clamp(this.suspension, -0.11, 0.11)
-    newY += this.suspension
-    // micro-bob por velocidad (muy leve, slowroads casi plano)
-    newY += Math.sin(this.progress * 0.11) * 0.004 * Math.min(1, Math.abs(this.speed)/45)
+    // suspensión rebote al girar — desactivado temporalmente para evitar temblor (usuario reportó shake)
+    // const steerDelta = Math.abs(this.steerValue - this.prevSteer)
+    // const lateralDelta = Math.abs(this.lateral - this.prevLateral)
+    // this.prevSteer = this.steerValue; this.prevLateral = this.lateral
+    // const turnForce = (steerDelta * 0.12 + lateralDelta * 0.04) * Math.min(1, Math.abs(this.speed) * 0.03 + 0.15)
+    // this.suspensionVel -= turnForce * 0.28
+    // const k = 18, d = 8.5
+    // this.suspensionVel += (-this.suspension * k - this.suspensionVel * d) * dt
+    // this.suspension += this.suspensionVel * dt
+    // this.suspension = THREE.MathUtils.clamp(this.suspension, -0.018, 0.018)
+    // newY += this.suspension
     pos.y = newY
 
     this.vehicle.position.copy(pos)
 
-    // FIX slowroads.io: coche PLANO, sin inclinación lateral (antes 0.32 rompía física de camino plano)
-    const targetYaw = Math.atan2(tangent.x, tangent.z)
-    const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1)) * 0.55 // pitch atenuado 45% para no cabeceo
-    const targetRoll = 0 // plano total; si se quiere micro-roll: this.steerValue*0.04
+    // FIX giro rígido: coche debe girar (yaw) al doblar, no solo desplazarse
+    const roadYaw = Math.atan2(tangent.x, tangent.z)
+    const steerYaw = -this.steerValue * 0.42 * speedFactor // volante añade guiñada (slowroads: ~24° max)
+    const targetYaw = roadYaw + steerYaw
+    const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1)) * 0.55
+    const targetRoll = 0
 
     this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, 1 - Math.exp(-this.yawLerp * dt))
     this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, 1 - Math.exp(-this.pitchLerp * dt))
-    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, 1 - Math.exp(-10 * dt)) // roll a 0 rápido
+    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, 1 - Math.exp(-10 * dt))
 
     this.vehicle.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ')
 
-    // ruedas delanteras giran al doblar + spin por velocidad (pedido)
-    const maxSteerAngle = 0.58 // ~33°
+    // ruedas delanteras giran al doblar + spin por velocidad
+    const maxSteerAngle = 0.52
     const steerAngle = this.steerValue * maxSteerAngle
-    this.wheelSpin += this.speed * dt * 5.2
-    // front: steer (Y) + spin (X en hijo si pivot)
+    this.wheelSpin += this.speed * dt * 5.4
+    // front: steer en Y del pivot, spin en X de todos los hijos meshes
     for (const w of this.frontWheels) {
-      if (w.children.length > 0 && (w.children[0] as any).isMesh) {
+      const isPivot = w.children.length > 0 && (w.children[0] as any).isMesh
+      if (isPivot) {
         w.rotation.y = steerAngle
-        ;(w.children[0] as THREE.Object3D).rotation.x = this.wheelSpin
+        w.children.forEach((c:any)=>{ if(c.isMesh) c.rotation.x = this.wheelSpin })
       } else {
         w.rotation.y = steerAngle
-        w.rotation.x = this.wheelSpin
+        ;(w as any).rotation.x = this.wheelSpin
       }
     }
     for (const w of this.rearWheels) {
-      if (w.children.length > 0 && (w.children[0] as any).isMesh) {
-        ;(w.children[0] as THREE.Object3D).rotation.x = this.wheelSpin
+      const isPivot = w.children.length > 0 && (w.children[0] as any).isMesh
+      if (isPivot) {
+        w.children.forEach((c:any)=>{ if(c.isMesh) c.rotation.x = this.wheelSpin })
       } else {
-        w.rotation.x = this.wheelSpin
+        ;(w as any).rotation.x = this.wheelSpin
       }
     }
   }
