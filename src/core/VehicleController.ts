@@ -177,16 +177,18 @@ export class VehicleController {
     this.speed += accZ * dt
     this.speed = THREE.MathUtils.clamp(this.speed, -this.topSpeed * 0.35, this.topSpeed)
 
-    // lateral integrado: accX es aceleración lateral, integrar a velocidad lateral y luego a posición
-    // Para simplificar slowroads 4 ruedas, integramos direct a lateral con slip
-    // Usamos accX como velocidad lateral objetivo
-    const lateralSpeed = accX * dt * 0.12 // escala para convertir aceleración a desplazamiento
-    // si hay slip, deslizamiento mayor
+    // FIX deriva a la derecha: lateral con signo corregido + autocentrado suave slowroads
+    // maxLat antes era -0.5 y daba izquierda para derecha (invertido), ahora +0.5
+    const lateralSpeed = -accX * dt * 0.12
     const slipMult = 1 + this.slip * 1.8
     this.lateral += lateralSpeed * slipMult * dt * 18
 
-    // sin auto-centrado (slowroads mantiene donde lo dejas)
-    // solo fricción natural por drag lateral ya aplicada
+    // autocentrado muy suave cuando no giras (evita quedarse pegado a la derecha)
+    if (Math.abs(targetSteerRaw) < 0.06 && Math.abs(this.steerValue) < 0.08) {
+      this.lateral = THREE.MathUtils.lerp(this.lateral, 0, dt * 0.9)
+    }
+    // deadzone lateral mínima
+    if (Math.abs(this.lateral) < 0.015) this.lateral = 0
 
     const atRightWall = this.lateral >= this.lateralLimit - 0.02
     const atLeftWall = this.lateral <= -this.lateralLimit + 0.02
@@ -194,9 +196,7 @@ export class VehicleController {
     const pushingLeftWall = atLeftWall && this.steerValue < -0.05
     const atWall = pushingRightWall || pushingLeftWall
     if (atWall) {
-      // muro: no avanzar más, rebote suave hacia dentro y sin yaw extra
       this.lateral = THREE.MathUtils.clamp(this.lateral, -this.lateralLimit, this.lateralLimit)
-      // pequeño empuje hacia dentro para no quedar pegado
       this.lateral = THREE.MathUtils.lerp(this.lateral, this.lateral - Math.sign(this.steerValue) * 0.08, 0.12)
       this.slip *= 0.92
     } else {
