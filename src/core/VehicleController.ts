@@ -17,17 +17,16 @@ export class VehicleController {
   pitch = 0
   roll = 0
 
-  // config – tuned for smooth cinematic feel (slowroads style)
-  maxSpeed = 92 // ~331 km/h max
-  accelPower = 26
-  brakePower = 42
-  friction = 1.6 // natural drag
-  steerSpeed = 3.2 // lerp speed for steerValue
-  lateralSpeed = 14 // how fast lateral responds
-  // smoothing for orientation
-  yawLerp = 4.5
-  pitchLerp = 3.0
-  rollLerp = 2.8
+  // SLOWROADS inspirado: inercia suave, steering no instantáneo, sin roll
+  maxSpeed = 88
+  accelPower = 18 // antes 26 muy brusco
+  brakePower = 34
+  friction = 1.15
+  steerSpeed = 1.65 // antes 3.2 → giro más pesado y cinemático
+  lateralSpeed = 14
+  yawLerp = 1.45 // antes 2.2 → guiñada más flotante
+  pitchLerp = 1.35
+  rollLerp = 12
 
   private lateralLimit = ROAD_WIDTH * 0.5 - 1.15 // leave margin for car width
 
@@ -95,14 +94,14 @@ export class VehicleController {
 
     this.vehicle.position.copy(pos)
 
-    // orientación: alineación con tangente, pitch/roll suavizados (roll invertido para acompañar giro)
-    const targetYaw = Math.atan2(tangent.x, tangent.z) // yaw Y
-    const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1))
-    const targetRoll = this.steerValue * speedFactor * 0.32 + (this.lateral * 0.025)
+    // FIX slowroads.io: coche PLANO, sin inclinación lateral (antes 0.32 rompía física de camino plano)
+    const targetYaw = Math.atan2(tangent.x, tangent.z)
+    const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1)) * 0.55 // pitch atenuado 45% para no cabeceo
+    const targetRoll = 0 // plano total; si se quiere micro-roll: this.steerValue*0.04
 
     this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, 1 - Math.exp(-this.yawLerp * dt))
     this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, 1 - Math.exp(-this.pitchLerp * dt))
-    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, 1 - Math.exp(-this.rollLerp * dt))
+    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, 1 - Math.exp(-10 * dt)) // roll a 0 rápido
 
     this.vehicle.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ')
 
