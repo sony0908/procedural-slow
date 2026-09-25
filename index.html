@@ -1,43 +1,71 @@
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ZOMBIE OPEN WORLD — Procedural</title>
-    <style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      html,body{width:100%;height:100%;overflow:hidden;background:#0f1411}
-      #game{width:100%;height:100%;display:block}
-      #overlay{position:fixed;inset:0;display:grid;place-items:center;background:rgba(8,12,10,.78);backdrop-filter:blur(6px);z-index:10;cursor:pointer}
-      #overlay.hidden{display:none}
-      #panel{background:#1a2220;border:1px solid #2a3a36;padding:28px 32px;border-radius:14px;text-align:center;color:#d8e0dc;max-width:420px}
-      #panel h1{font:700 22px/1.1 system-ui;letter-spacing:.04em;color:#e6f0e8}
-      #panel p{font:400 13px/1.5 system-ui;color:#9bb0a8;margin:10px 0 18px}
-      #panel kbd{background:#0f1411;border:1px solid #2a3a36;border-bottom-width:2px;padding:2px 6px;border-radius:4px;font:700 11px system-ui}
-      #panel button{width:100%;padding:12px;border:0;border-radius:8px;background:#6b8f7a;color:#0a1310;font:700 13px system-ui;letter-spacing:.08em;cursor:pointer}
-      #hud{position:fixed;top:12px;left:12px;z-index:5;color:#cfe0d8;font:600 11px/1.4 ui-monospace,monospace;background:rgba(12,18,16,.72);border:1px solid #24302d;padding:10px 12px;border-radius:10px;min-width:210px;pointer-events:none}
-      #hud b{color:#8fd1a8}
-      #cross{position:fixed;left:50%;top:50%;width:14px;height:14px;transform:translate(-50%,-50%);z-index:4;pointer-events:none}
-      #cross:before,#cross:after{content:"";position:absolute;background:#d8e6dc;opacity:.9}
-      #cross:before{left:6px;top:0;width:2px;height:14px}
-      #cross:after{left:0;top:6px;width:14px;height:2px}
-      #notice{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:6;color:#e8f3ea;background:rgba(10,16,13,.8);border:1px solid #2a3d34;padding:8px 14px;border-radius:999px;font:700 12px system-ui;letter-spacing:.06em;opacity:0;transition:opacity .2s}
-      #notice.show{opacity:1}
-    </style>
-  </head>
-  <body>
-    <canvas id="game"></canvas>
-    <div id="cross"></div>
-    <div id="hud">Cargando…</div>
-    <div id="notice"></div>
-    <div id="overlay">
-      <div id="panel">
-        <h1>ZOMBIE OPEN WORLD</h1>
-        <p>Procedural FPS • <kbd>WASD</kbd> mover • <kbd>SHIFT</kbd> correr • <kbd>Mouse</kbd> mirar • <kbd>Clic</kbd> disparar • <kbd>R</kbd> recargar</p>
-        <button id="enter">ENTRAR — Click para bloquear mouse</button>
-        <p style="margin-top:12px;font-size:11px;opacity:.7">Terreno modular en Worker • chunks 24m • niebla + Performance HUD</p>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>CYBERDRIVE 3D — Synthwave Racing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;overflow:hidden;background:#020208;font-family:'Share Tech Mono',monospace}
+    #game{width:100%;height:100%;display:block}
+    /* HUD */
+    #hud{position:fixed;top:0;left:0;z-index:10;pointer-events:none;padding:18px 20px}
+    #speedo{font-family:'Orbitron',monospace;font-weight:800;font-size:42px;letter-spacing:.06em;color:#00ffff;text-shadow:0 0 10px #00ffff,0 0 28px #00ffff, 0 0 42px rgba(0,255,255,.6);line-height:1}
+    #speedo small{font-family:'Share Tech Mono',monospace;font-size:13px;letter-spacing:.28em;color:#ff0055;text-shadow:0 0 8px #ff0055;display:block;margin-top:2px}
+    #speedo b{font-size:56px}
+    #minimapWrap{margin-top:14px;background:rgba(2,2,8,.72);border:1px solid rgba(0,255,255,.35);border-radius:10px;padding:8px;box-shadow:0 0 18px rgba(0,255,255,.18), inset 0 0 12px rgba(255,0,85,.08);backdrop-filter:blur(6px)}
+    #minimapWrap label{display:block;font:700 9px 'Share Tech Mono',monospace;letter-spacing:.22em;color:#00ffff;opacity:.9;margin-bottom:6px;text-shadow:0 0 6px #00ffff}
+    #minimap{display:block;border-radius:6px;background:#050510}
+    #rightHud{position:fixed;top:18px;right:18px;z-index:10;pointer-events:none;text-align:right}
+    #fpsHud{font:700 10px 'Share Tech Mono',monospace;letter-spacing:.12em;color:rgba(255,255,255,.7);background:rgba(2,2,8,.6);border:1px solid rgba(255,255,255,.12);padding:6px 8px;border-radius:8px}
+    /* Center overlay */
+    #overlay{position:fixed;inset:0;display:grid;place-items:center;background:radial-gradient(1200px 600px at 50% 20%, rgba(0,255,255,.10), transparent 60%), linear-gradient(180deg, rgba(2,2,8,.88), rgba(2,2,8,.94));z-index:20;cursor:pointer;transition:opacity .4s}
+    #overlay.hidden{opacity:0;pointer-events:none}
+    #panel{width:min(560px,92vw);background:rgba(10,10,18,.92);border:1px solid rgba(0,255,255,.32);border-radius:16px;padding:28px 24px;box-shadow:0 0 40px rgba(0,255,255,.16), 0 0 80px rgba(255,0,85,.12);text-align:center}
+    #panel h1{font:800 30px 'Orbitron',monospace;letter-spacing:.16em;color:#fff;text-shadow:0 0 14px #00ffff, 0 0 30px rgba(0,255,255,.6)}
+    #panel h1 span{color:#ff0055;text-shadow:0 0 14px #ff0055}
+    #panel p{font:400 12px/1.6 'Share Tech Mono',monospace;letter-spacing:.06em;color:#b8c7d6;margin:12px 0}
+    #panel .kbd{font:700 10px 'Share Tech Mono',monospace;color:#020208;background:#00ffff;border-radius:4px;padding:2px 6px;box-shadow:0 0 8px #00ffff;margin:0 2px}
+    #panel .kbd.mag{background:#ff0055;color:#fff;box-shadow:0 0 8px #ff0055}
+    #panel button{width:100%;margin-top:16px;padding:14px;border:0;border-radius:10px;background:linear-gradient(90deg,#00ffff,#ff0055);color:#020208;font:800 13px 'Orbitron',monospace;letter-spacing:.14em;cursor:pointer;box-shadow:0 0 18px rgba(0,255,255,.5),0 0 30px rgba(255,0,85,.35);transition:transform .12s, filter .2s}
+    #panel button:hover{filter:brightness(1.08);transform:translateY(-1px)}
+    #panel button:active{transform:translateY(0)}
+    #credits{margin-top:14px;font:400 9px/1.5 'Share Tech Mono',monospace;letter-spacing:.06em;color:#7a8a9a}
+    #credits a{color:#00ffff;text-decoration:none;border-bottom:1px dotted rgba(0,255,255,.4)}
+    #controlsHelp{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(2,2,8,.68);border:1px solid rgba(255,255,255,.1);padding:8px 14px;border-radius:999px;font:700 10px 'Share Tech Mono',monospace;letter-spacing:.14em;color:#cfe8f0;pointer-events:none;backdrop-filter:blur(6px)}
+    #notice{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:30;color:#e8f3ea;background:rgba(10,16,13,.82);border:1px solid rgba(0,255,255,.3);padding:8px 14px;border-radius:999px;font:700 11px 'Share Tech Mono',monospace;letter-spacing:.08em;opacity:0;transition:opacity .2s;pointer-events:none;text-align:center}
+    #notice.show{opacity:1}
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="hud">
+    <div id="speedo"><b id="speedVal">000</b> <small>KM/H</small></div>
+    <div id="minimapWrap"><label>◉ MINIMAPA VECTORIAL</label><canvas id="minimap" width="180" height="180"></canvas></div>
+  </div>
+  <div id="rightHud"><div id="fpsHud">60 FPS • CHUNK —</div></div>
+  <div id="notice"></div>
+  <div id="overlay">
+    <div id="panel">
+      <h1>CYBER<span>DRIVE</span> 3D</h1>
+      <p style="color:#00ffff;letter-spacing:.18em;font-size:10px;margin-top:6px">SYNTHWAVE RACING • 60 FPS • PROCEDURAL INFINITO</p>
+      <p>Conduce el <b style="color:#fff">2010 Citroën DS Survolt</b> por una autopista infinita de neón.<br/>Terreno y pista generados por código • Sin pantallas de carga.</p>
+      <p>
+        <span class="kbd">W / ↑</span> acelerar &nbsp;
+        <span class="kbd mag">S / ↓</span> freno &nbsp;
+        <span class="kbd">A / ←</span> <span class="kbd">D / →</span> girar &nbsp;
+        <span class="kbd mag">SPACE</span> freno mano
+      </p>
+      <p style="font-size:10px;opacity:.7">Tip: mantén la velocidad para activar el FOV elástico y el roll de cámara estilo slowroads.io</p>
+      <button id="enter">▶ INICIAR MOTORES — CLICK / ENTER</button>
+      <div id="credits">
+        Vehículo: “2010 Citroën DS Survolt” (https://skfb.ly/pNPRJ) by Ddiaz Design<br/>licenciado bajo <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC Attribution-NonCommercial-ShareAlike</a>
       </div>
     </div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+  </div>
+  <div id="controlsHelp">WASD / Flechas para conducir • Mouse para mirar • ESC para pausar</div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
 </html>
