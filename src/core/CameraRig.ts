@@ -8,14 +8,14 @@ export class CameraRig {
   private lookAt = new THREE.Vector3()
   private roll = 0
 
-  // config
-  stiffness = 22
-  damping = 7.5
-  distance = 11.5
-  height = 4.2
-  lookAhead = 18
-  fovBase = 72
-  fovMaxBoost = 18
+  // FIX cámara muy alejada y se va atrás al acelerar: acercar y rigidizar
+  stiffness = 42
+  damping = 14
+  distance = 6.2 // antes 11.5 muy lejos
+  height = 2.4 // antes 4.2 muy alto
+  lookAhead = 10 // antes 18
+  fovBase = 68
+  fovMaxBoost = 7 // antes 18 demasiado FOV al acelerar parecía retroceso
 
   constructor(private camera: THREE.PerspectiveCamera, private vehicle: THREE.Group) {
     this.pos.copy(vehicle.position).add(new THREE.Vector3(0, this.height, -this.distance))

@@ -61,11 +61,11 @@ export class VehicleController {
       this.speed = THREE.MathUtils.lerp(this.speed, 0, dt * 2.5)
     }
 
-    // lateral movement: steer effectiveness scales with speed (can't steer when stopped)
+    // FIX controles invertidos: invertir lateral (antes derecha→izq)
     const speedFactor = THREE.MathUtils.clamp(Math.abs(this.speed) / 18, 0, 1) // 0 when stopped, 1 at 18 u/s
     const steerEffect = this.steerValue * speedFactor
-    // lateral velocity
-    const lateralVel = steerEffect * (9 + Math.abs(this.speed) * 0.11) * 1.0 // units / sec per steer
+    // lateral invertido para que A/← = izq y D/→ = der
+    const lateralVel = -steerEffect * (9 + Math.abs(this.speed) * 0.11) * 1.0 // invertido
     this.lateral += lateralVel * dt
     // auto-centering spring when no steer (gentle)
     if (Math.abs(targetSteer) < 0.08) {
@@ -95,10 +95,10 @@ export class VehicleController {
 
     this.vehicle.position.copy(pos)
 
-    // orientación: alineación con tangente, pitch/roll suavizados (sin bob)
+    // orientación: alineación con tangente, pitch/roll suavizados (roll invertido para acompañar giro)
     const targetYaw = Math.atan2(tangent.x, tangent.z) // yaw Y
     const targetPitch = -Math.asin(THREE.MathUtils.clamp(tangent.y, -1, 1))
-    const targetRoll = -this.steerValue * speedFactor * 0.32 - (this.lateral * 0.025)
+    const targetRoll = this.steerValue * speedFactor * 0.32 + (this.lateral * 0.025)
 
     this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, 1 - Math.exp(-this.yawLerp * dt))
     this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, 1 - Math.exp(-this.pitchLerp * dt))

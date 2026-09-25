@@ -34,13 +34,16 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x020208)
 scene.fog = new THREE.FogExp2(0x020208, 0.008) // spec: 0x020208 0.008
 
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 1400)
-camera.position.set(0, 5, -12)
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 1400)
+camera.position.set(0, 3.2, -8)
 
-scene.add(new THREE.HemisphereLight(0x9ab7ff, 0x080818, 0.9))
-const sun = new THREE.DirectionalLight(0xfff2d6, 2.0); sun.position.set(-40, 60, -20); scene.add(sun)
-const neonFill = new THREE.PointLight(0x00ffff, 22, 30); neonFill.position.set(0, 4, 0); scene.add(neonFill)
-scene.add(new THREE.AmbientLight(0x1a1a2a, 0.35))
+scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x1a1a2e, 1.35))
+const sun = new THREE.DirectionalLight(0xfff6e0, 3.2); sun.position.set(-30, 55, -18); sun.castShadow=false; scene.add(sun)
+const sun2 = new THREE.DirectionalLight(0xb8d6ff, 1.4); sun2.position.set(35, 40, 22); scene.add(sun2)
+const neonFill = new THREE.PointLight(0x00ffff, 28, 35); neonFill.position.set(0, 6, 0); scene.add(neonFill)
+const magentaFill = new THREE.PointLight(0xff0055, 18, 28); magentaFill.position.set(0, 3.5, -6); scene.add(magentaFill)
+scene.add(new THREE.AmbientLight(0xffffff, 0.72))
+renderer.toneMappingExposure = 1.45
 
 // ——— Stars (partículas pequeñas inmóviles lejanas) ———
 function createStars() {
@@ -225,15 +228,10 @@ async function loadVehicle() {
     // Altura de ruedas al asfalto — antes 0.62 causaba flotación + saltos
     root.position.y += 0.42
     root.position.z += 0.06
-    // Frente hacia +Z (dirección carretera). El GLB original mira -Z en Three, así que Math.PI
-    // Si sigue de cabeza, prueba 0 o Math.PI: dejamos Math.PI pero con corrección de vuelco:
-    // La Survolt tiene el techo en +Y; si sale invertida es que el GLB trae X = -PI, lo corregimos
-    root.rotation.y = Math.PI
-    // Si detectamos que la caja está invertida en Y (centro muy bajo), volteamos X
-    // Heurística: tamaño Y debería ser ~1.2, si está invertido el centro Y negativo grande, ya lo centramos arriba
-    // Asegurar que no haya vuelco 180 en X/Z
+    // Frente hacia +Z (adelante, no mirando a cámara). Antes Math.PI lo dejaba mirando al jugador (-Z)
     root.rotation.x = 0
     root.rotation.z = 0
+    root.rotation.y = needYaw90 ? Math.PI * 0.5 : 0
 
     // remove placeholder
     if (vehicleMesh) {
