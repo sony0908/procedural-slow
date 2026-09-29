@@ -1,7 +1,0 @@
-﻿feat: clona manejo RaycastVehicle de raycast-rc-car (cannon-es)
-
-- Nuevo RaycastVehicleController con CANNON.RaycastVehicle (engine 1450 boost 1.75 maxSteer 0.54 steerSpeed 5.8 suspension 68/0.52/0.40 friction 7.6 mass 250)
-  chassis Box+4 esferas esquinas para trimesh, 4 ruedas raycast, trimesh ground, sync visual
-- CyberChunk/CyberChunkManager: cada chunk carretera+terreno+under como CANNON.Trimesh estatico (world.addBody, dispose al salir)
-- main raycast: world gravity -9.82 SAPBroadphase, fixedStep 1/60, handleInput accel/steer/brake, syncVisuals, HUD/minimapa, stars, fog, GLB Citroën ocultando ruedas GLB y usando placeholder raycast
-- Mantiene mapa procedural perfecto, neón, chunks 300u, 60 FPS, órbita drag, HUD
