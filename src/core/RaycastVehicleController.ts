@@ -158,14 +158,14 @@ export class RaycastVehicleController {
     this.input.boost = false
     this.input.handbrake = input.brake
     ;(this.input as any).throttleAxis = input.accel
-    ;(this.input as any).steerAxis = -input.steer // invertido para que A izq = izq (raycast original invierte)
+    ;(this.input as any).steerAxis = input.steer
   }
 
   update(dt: number) {
     // steering
     const p=this.params
     const steerInput = (this.input as any).steerAxis ?? ((this.input.right?1:0)+(this.input.left?-1:0))
-    const targetSteer = -steerInput * p.maxSteer
+    const targetSteer = steerInput * p.maxSteer
     const steerDelta = p.steerSpeed * dt
     this.currentSteer = THREE.MathUtils.clamp(targetSteer, this.currentSteer - steerDelta, this.currentSteer + steerDelta)
     this.raycastVehicle.setSteeringValue(this.currentSteer, 0)
@@ -180,10 +180,10 @@ export class RaycastVehicleController {
     const fwd = throttleInput > 0.05
     const back = throttleInput < -0.05
     let force = 0
-    if (fwd && speed < cap) force = p.engineForce * (boosting? p.boostMultiplier:1) * Math.min(1, Math.abs(throttleInput))
+    if (fwd && speed < cap) force = -p.engineForce * (boosting? p.boostMultiplier:1) * Math.min(1, Math.abs(throttleInput))
     else if (back) {
       const movingFwd = this.chassisBody.velocity.dot(this._forwardDir()) > 0.5
-      force = movingFwd ? 0 : -p.engineForce * p.reverseFactor * Math.min(1, Math.abs(throttleInput))
+      force = movingFwd ? 0 : p.engineForce * p.reverseFactor * Math.min(1, Math.abs(throttleInput))
     }
     this.raycastVehicle.applyEngineForce(force, 2)
     this.raycastVehicle.applyEngineForce(force, 3)

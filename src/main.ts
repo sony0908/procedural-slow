@@ -59,12 +59,12 @@ world.broadphase = new CANNON.SAPBroadphase(world)
 ;(world.solver as any).iterations = 10
 world.defaultContactMaterial.friction = 0.9
 world.defaultContactMaterial.restitution = 0
-// suelo infinito para raycast (y=0) — mantiene conducción aunque terreno visual sea procedural
+// suelo infinito para raycast (y=0.02 coincide con asfalto) — mantiene conducción
 const groundShape = new CANNON.Plane()
 const groundBody = new CANNON.Body({ mass: 0 })
 groundBody.addShape(groundShape)
 groundBody.quaternion.setFromEuler(-Math.PI/2, 0, 0)
-groundBody.position.set(0, 0, 0)
+groundBody.position.set(0, 0.02, 0)
 world.addBody(groundBody)
 
 // World chunks visuales (sin física, como pediste: mapa perfecto se mantiene)
