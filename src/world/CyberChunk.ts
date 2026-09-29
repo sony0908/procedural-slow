@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import * as CANNON from 'cannon-es'
 import { buildRoadRibbon, buildCurve, CHUNK_LENGTH, ROAD_WIDTH, roadCenter } from './Road'
 import { buildTerrainChunk, createTerrainMaterial } from './Terrain'
 
@@ -10,18 +9,14 @@ export class CyberChunk {
   readonly group: THREE.Group
   private meshes: THREE.Mesh[] = []
   private geos: THREE.BufferGeometry[] = []
-  private physicsBodies: CANNON.Body[] = []
 
-  private world: CANNON.World | null = null
-  constructor(index: number, world?: CANNON.World) {
+  constructor(index: number) {
     this.index = index
     this.z0 = index * CHUNK_LENGTH
     this.z1 = this.z0 + CHUNK_LENGTH
     this.group = new THREE.Group()
     this.group.name = `chunk_${index}`
-    this.world = world || null
     this.build()
-    if (world) this.buildPhysics(world)
   }
 
   private build() {
@@ -167,33 +162,6 @@ export class CyberChunk {
     return geo
   }
 
-  private buildPhysics(world: CANNON.World) {
-    // carretera + terreno como Trimesh estático (como rc-level.glb en raycast-rc-car)
-    const create = (geo: THREE.BufferGeometry) => {
-      try {
-        const cgeo = geo.clone()
-        // asegurar index y pos
-        const pos = cgeo.getAttribute('position') as THREE.BufferAttribute
-        const idx = cgeo.getIndex()
-        if (!pos || !idx) return
-        const verts = pos.array as Float32Array
-        const indices = idx.array as any
-        const shape = new CANNON.Trimesh(Array.from(verts) as any, Array.from(indices) as any)
-        const body = new CANNON.Body({ mass: 0 })
-        body.addShape(shape)
-        body.position.set(0,0,0)
-        body.updateAABB()
-        world.addBody(body)
-        this.physicsBodies.push(body)
-      } catch(e){ console.warn('trimesh fail', e) }
-    }
-    // solo colisionable: carretera + terreno + underGlow (suelo)
-    // geos[0]=road, geos[3]=terrain, geos[4]=under
-    if (this.geos[0]) create(this.geos[0])
-    if (this.geos[3]) create(this.geos[3])
-    if (this.geos[4]) create(this.geos[4])
-  }
-
   dispose(scene: THREE.Scene) {
     scene.remove(this.group)
     for (const g of this.geos) g.dispose()
@@ -201,10 +169,6 @@ export class CyberChunk {
       const mat = (m as any).material as THREE.Material | THREE.Material[]
       if (Array.isArray(mat)) mat.forEach(mm=>mm.dispose())
       else mat.dispose()
-    }
-    if (this.world) {
-      for (const b of this.physicsBodies) this.world.removeBody(b)
-      this.physicsBodies.length = 0
     }
   }
 }

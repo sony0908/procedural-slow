@@ -53,22 +53,26 @@ function createStars(){
 }
 const stars=createStars()
 
-// Physics world
+// Physics world — suelo simple infinito (terreno visual se mantiene como antes, sin trimesh)
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) })
 world.broadphase = new CANNON.SAPBroadphase(world)
 ;(world.solver as any).iterations = 10
 world.defaultContactMaterial.friction = 0.9
 world.defaultContactMaterial.restitution = 0
+// suelo infinito para raycast (y=0) — mantiene conducción aunque terreno visual sea procedural
+const groundShape = new CANNON.Plane()
+const groundBody = new CANNON.Body({ mass: 0 })
+groundBody.addShape(groundShape)
+groundBody.quaternion.setFromEuler(-Math.PI/2, 0, 0)
+groundBody.position.set(0, 0, 0)
+world.addBody(groundBody)
 
-// World chunks with physics
-const chunkMgr = new CyberChunkManager(scene, world)
+// World chunks visuales (sin física, como pediste: mapa perfecto se mantiene)
+const chunkMgr = new CyberChunkManager(scene)
 
 // Vehicle (raycast)
 const raycastCtrl = new RaycastVehicleController(scene, world)
-// placeholder visuals will be replaced by GLB, but we need initial
-// raycastCtrl creates its own placeholder boxes, we will hide them when GLB loads
-// Move raycast group to start position
-raycastCtrl.chassisBody.position.set(0, 2.2, 6)
+raycastCtrl.chassisBody.position.set(0, 0.65, 6)
 raycastCtrl.chassisBody.quaternion.set(0,0,0,1)
 
 // Camera rig follows raycast chassis

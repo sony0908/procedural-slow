@@ -59,7 +59,7 @@ export class RaycastVehicleController {
   private currentSteer = 0
   private chassisMaterial!: CANNON.Material
   private input = { fwd:false, back:false, left:false, right:false, boost:false, brake:false, handbrake:false }
-  private spawnPos = new CANNON.Vec3(0, 2.5, 6)
+  private spawnPos = new CANNON.Vec3(0, 1.15, 6)
   private spawnQuat = new CANNON.Quaternion()
 
   private wheelMeshes: THREE.Group[] = []
@@ -151,16 +151,14 @@ export class RaycastVehicleController {
   }
 
   handleInput(input: { accel:number, steer:number, brake:boolean }) {
-    // input.accel -1..1 (W/S), steer -1..1 (A/D)
     this.input.fwd = input.accel > 0.12
     this.input.back = input.accel < -0.12
     this.input.left = input.steer < -0.08
     this.input.right = input.steer > 0.08
     this.input.boost = false
     this.input.handbrake = input.brake
-    // ejes continuos
     ;(this.input as any).throttleAxis = input.accel
-    ;(this.input as any).steerAxis = input.steer
+    ;(this.input as any).steerAxis = -input.steer // invertido para que A izq = izq (raycast original invierte)
   }
 
   update(dt: number) {
@@ -182,10 +180,10 @@ export class RaycastVehicleController {
     const fwd = throttleInput > 0.05
     const back = throttleInput < -0.05
     let force = 0
-    if (fwd && speed < cap) force = -p.engineForce * (boosting? p.boostMultiplier:1) * Math.min(1, Math.abs(throttleInput))
+    if (fwd && speed < cap) force = p.engineForce * (boosting? p.boostMultiplier:1) * Math.min(1, Math.abs(throttleInput))
     else if (back) {
       const movingFwd = this.chassisBody.velocity.dot(this._forwardDir()) > 0.5
-      force = movingFwd ? 0 : p.engineForce * p.reverseFactor * Math.min(1, Math.abs(throttleInput))
+      force = movingFwd ? 0 : -p.engineForce * p.reverseFactor * Math.min(1, Math.abs(throttleInput))
     }
     this.raycastVehicle.applyEngineForce(force, 2)
     this.raycastVehicle.applyEngineForce(force, 3)
